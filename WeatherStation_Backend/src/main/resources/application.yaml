@@ -94,4 +94,11 @@ app:
     intervalo-ms: ${APP_ALERTAS_INTERVALO_MS:300000}       # 5 min entre evaluaciones
     initial-delay-ms: ${APP_ALERTAS_INITIAL_DELAY_MS:30000} # 30 s tras el arranque
   solicitudes:
+    # Remitente de los correos. DEBE ser un remitente verificado en Brevo.
     email-from: ${SOLICITUDES_EMAIL_FROM:noreply@climbot.app}
+  email:
+    # Envío por la API HTTP de Brevo (SMTP no funciona en Render free).
+    # Sin API key, el envío queda deshabilitado (solo se registra un aviso).
+    brevo-api-key: ${BREVO_API_KEY:}
+    brevo-base-url: ${BREVO_BASE_URL:https://api.brevo.com}
+    from-name: ${EMAIL_FROM_NAME:CLIMBOT}
