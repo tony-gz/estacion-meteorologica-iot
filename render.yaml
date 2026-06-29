@@ -1,0 +1,54 @@
+# Blueprint de Render para el WeatherStation Backend.
+# Despliega un servicio web (Docker) + PostgreSQL gestionado.
+# Los secretos marcados con sync:false se introducen en el dashboard de Render.
+services:
+  - type: web
+    name: weatherstation-backend
+    runtime: docker
+    plan: free
+    rootDir: WeatherStation_Backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+
+      # Base de datos (PostgreSQL gestionado por Render, definida abajo).
+      # Pega aquí la "Internal Database URL" en formato JDBC:
+      #   jdbc:postgresql://HOST:PORT/DB   (sin usuario/contraseña)
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        fromDatabase:
+          name: weatherstation-db
+          property: user
+      - key: SPRING_DATASOURCE_PASSWORD
+        fromDatabase:
+          name: weatherstation-db
+          property: password
+
+      # Seguridad (usuarios)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # Seguridad (dispositivos/estaciones): secreto SEPARADO del de usuarios
+      - key: DEVICE_JWT_SECRET
+        generateValue: true
+
+      # Gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+
+      # CORS: orígenes de las apps cliente (Flutter/Web), separados por coma
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+databases:
+  - name: weatherstation-db
+    plan: free

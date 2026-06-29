@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Red Meteorológica — Chilpancingo</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#0a0e1a;--bg2:#111827;--bg3:#1a2235;
+  --border:rgba(255,255,255,0.07);
+  --accent:#38bdf8;--accent2:#818cf8;
+  --warm:#fb923c;--cold:#60a5fa;--rain:#34d399;--wind:#a78bfa;--danger:#f87171;
+  --text:#f1f5f9;--muted:#64748b;--card-r:16px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;overflow-x:hidden;}
+
+#sky-canvas{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:0.55;transition:opacity 1s;}
+.wrapper{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 20px 60px;}
+
+header{padding:32px 0 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);margin-bottom:28px;flex-wrap:wrap;gap:12px;}
+.logo{font-family:'Space Mono',monospace;font-size:13px;color:var(--accent);letter-spacing:.1em;text-transform:uppercase;}
+.logo span{color:var(--muted);}
+.header-right{display:flex;align-items:center;gap:16px;}
+#btn-fullscreen{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:'Space Mono',monospace;font-size:11px;transition:all .2s;}
+#btn-fullscreen:hover{border-color:var(--accent);color:var(--accent);}
+
+/* ── BADGE ESTACIONES CONECTADAS ── */
+#badge-conectadas{font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+#badge-conectadas .dot{width:7px;height:7px;border-radius:50%;background:var(--rain);animation:pulso 2s infinite;}
+@keyframes pulso{0%,100%{opacity:1}50%{opacity:.45}}
+
+/* ── SPLASH CARGANDO ── */
+#splash{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .5s;}
+#splash.oculto{opacity:0;pointer-events:none;}
+.splash-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;}
+.splash-txt{font-family:'Space Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.1em;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.tabs-bar{display:flex;gap:6px;margin-bottom:28px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:0;}
+.tab-btn{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.07em;padding:10px 18px;border:none;background:transparent;color:var(--muted);cursor:pointer;transition:all .25s;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:8px;border-radius:8px 8px 0 0;}
+.tab-btn:hover{color:var(--text);background:rgba(255,255,255,.04);}
+.tab-btn.activa{color:var(--tab-color,var(--accent));border-bottom-color:var(--tab-color,var(--accent));background:rgba(255,255,255,.03);}
+.tab-dot{width:7px;height:7px;border-radius:50%;background:var(--tab-color,var(--accent));opacity:.5;transition:opacity .3s;}
+.tab-btn.activa .tab-dot{opacity:1;box-shadow:0 0 6px var(--tab-color,var(--accent));animation:pulso 2s infinite;}
+.tab-btn.sin-datos .tab-dot{background:var(--muted);}
+/* Badge "Nueva" en pestaña recién descubierta */
+.tab-new-badge{font-size:9px;background:var(--rain);color:#000;border-radius:3px;padding:1px 5px;font-family:'Space Mono',monospace;letter-spacing:.05em;animation:fadeIn .4s ease;}
+
+.estacion-panel{display:none;}
+.estacion-panel.activa{display:block;animation:fadeIn .3s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+.banner-alerta{display:none;background:linear-gradient(135deg,rgba(248,113,113,.15),rgba(251,146,60,.1));border:1px solid rgba(248,113,113,.3);border-radius:var(--card-r);padding:16px 20px;margin-bottom:24px;font-size:14px;line-height:1.7;color:#fca5a5;}
+.banner-alerta.visible{display:block;animation:slideDown .4s ease;}
+@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── INFO ESTACIÓN ── */
+.est-info-bar{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap;}
+.est-info-chip{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;}
+.est-info-chip b{color:var(--text);}
+
+.frase-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);padding:20px 24px;margin-bottom:28px;display:flex;align-items:center;gap:16px;transition:all .5s ease;}
+.frase-icon{font-size:32px;flex-shrink:0;}
+.frase-texto{font-size:16px;font-weight:300;color:var(--text);line-height:1.5;}
+.frase-texto strong{font-weight:500;color:var(--accent);}
+
+.racha-bar{display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;}
+.racha-item{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 18px;font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px;}
+.racha-item .racha-val{font-size:22px;font-weight:700;color:var(--text);}
+.racha-item .racha-label{letter-spacing:.08em;text-transform:uppercase;}
+
+.grid-sensores{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:28px;}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);padding:20px;transition:border-color .3s,transform .2s;position:relative;overflow:hidden;}
+.card:hover{border-color:rgba(255,255,255,.15);transform:translateY(-2px);}
+.card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--card-accent,var(--accent));opacity:.7;}
+.card-label{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;}
+.card-valor{font-family:'Space Mono',monospace;font-size:32px;font-weight:700;color:var(--text);line-height:1;margin-bottom:4px;transition:color .4s;}
+.card-unidad{font-size:14px;font-weight:400;color:var(--muted);margin-left:4px;}
+.card-sub{font-size:12px;color:var(--muted);margin-top:8px;}
+.card-temp{--card-accent:var(--warm);}
+.card-hum{--card-accent:var(--accent);}
+.card-pres{--card-accent:var(--accent2);}
+.card-viento{--card-accent:var(--wind);}
+.card-dir{--card-accent:var(--wind);}
+.card-lluvia{--card-accent:var(--rain);}
+.card-valor.actualizando{animation:flash .4s ease;}
+@keyframes flash{0%{opacity:.3}100%{opacity:1}}
+.card-oculta{display:none!important;}
+
+/* ── ROSA DE LOS VIENTOS ── */
+.card-rosa{grid-column:span 1;display:flex;flex-direction:column;align-items:center;justify-content:center;--card-accent:var(--wind);}
+.rosa-svg{width:120px;height:120px;}
+.rosa-flecha{transition:transform .8s cubic-bezier(.34,1.56,.64,1);}
+
+/* ── BOTÓN DESCARGA CSV ── */
+.btn-csv{font-family:'Space Mono',monospace;font-size:10px;padding:5px 12px;border-radius:6px;border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.07);color:#34d399;cursor:pointer;transition:all .2s;letter-spacing:.05em;display:flex;align-items:center;gap:6px;}
+.btn-csv:hover{border-color:#34d399;background:rgba(52,211,153,.15);}
+
+.ultima-act{font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);text-align:right;margin-bottom:28px;}
+.seccion-titulo{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:12px;}
+.seccion-titulo::after{content:'';flex:1;height:1px;background:var(--border);}
+
+.rango-btns{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center;}
+.btn-rango{font-family:'Space Mono',monospace;font-size:11px;padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .2s;letter-spacing:.05em;}
+.btn-rango:hover,.btn-rango.activo{border-color:var(--accent);color:var(--accent);background:rgba(56,189,248,.08);}
+
+.grid-graficas{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;}
+@media(max-width:700px){.grid-graficas{grid-template-columns:1fr;}}
+.card-grafica{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);padding:20px;}
+.card-grafica-titulo{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;}
+
+.tabla-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);overflow:hidden;margin-bottom:28px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead tr{background:var(--bg3);}
+th{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:12px 16px;text-align:left;border-bottom:1px solid var(--border);}
+td{padding:11px 16px;border-bottom:1px solid var(--border);color:var(--text);}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:rgba(255,255,255,.02);}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-family:'Space Mono',monospace;}
+.cargando{text-align:center;padding:60px;color:var(--muted);font-family:'Space Mono',monospace;font-size:13px;letter-spacing:.1em;}
+.spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:16px;}
+
+/* ── PANEL SIN DATOS ── */
+.sin-datos-panel{text-align:center;padding:60px 20px;color:var(--muted);font-family:'Space Mono',monospace;font-size:13px;letter-spacing:.08em;background:var(--bg2);border:1px solid var(--border);border-radius:var(--card-r);margin-bottom:28px;}
+
+/* ── PANEL VACÍO (sin estaciones aún) ── */
+#panel-vacio{text-align:center;padding:80px 20px;color:var(--muted);font-family:'Space Mono',monospace;font-size:13px;letter-spacing:.08em;}
+#panel-vacio .ico{font-size:48px;display:block;margin-bottom:20px;opacity:.4;}
+#panel-vacio p{margin-bottom:8px;}
+#panel-vacio code{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--accent);}
+
+:fullscreen #sky-canvas{opacity:.7;}
+:fullscreen .wrapper{max-width:100%;padding:0 32px 32px;}
+
+@media(max-width:500px){
+  .grid-sensores{grid-template-columns:1fr 1fr;}
+  .card-valor{font-size:26px;}
+  header{flex-direction:column;align-items:flex-start;}
+  .tabs-bar{gap:2px;}
+  .tab-btn{padding:8px 12px;font-size:10px;}
+}
+</style>
+</head>
+<body>
+
+<!-- Pantalla de carga inicial -->
+<div id="splash">
+  <div class="splash-spinner"></div>
+  <div class="splash-txt">Buscando estaciones...</div>
+</div>
+
+<canvas id="sky-canvas"></canvas>
+<div class="wrapper">
+
+<header>
+  <div>
+    <div class="logo">Red Meteorológica <span>/ Chilpancingo, Gro.</span></div>
+  </div>
+  <div class="header-right">
+    <div id="badge-conectadas"><span class="dot"></span><span id="txt-conectadas">0 estaciones</span></div>
+    <button id="btn-fullscreen" onclick="toggleFullscreen()">⛶ Pantalla completa</button>
+  </div>
+</header>
+
+<div class="tabs-bar" id="tabs-bar"></div>
+<div id="paneles">
+  <!-- Panel vacío mientras no haya estaciones registradas -->
+  <div id="panel-vacio">
+    <span class="ico">📡</span>
+    <p>No hay estaciones registradas aún.</p>
+    <p style="margin-top:12px;color:var(--text);font-size:12px;">Cuando un ESP32 se conecte con el auth correcto,<br>aparecerá automáticamente aquí.</p>
+    <p style="margin-top:20px;font-size:11px;">Ruta de registro en Firebase:</p>
+    <code>/registro/estacionN/info</code>
+  </div>
+</div>
+
+</div>
+
+<script type="module">
+import { initializeApp }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, onValue, query, orderByKey, limitToLast }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// ════════════════════════════════════════════
+//  ✏️  ÚNICA CONFIGURACIÓN NECESARIA
+//  Solo toca esto. Las estaciones se detectan
+//  automáticamente desde Firebase.
+// ════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "TU_API_KEY",
+  authDomain:        "TU_PROYECTO.firebaseapp.com",
+  databaseURL:       "https://weatherstation-esp32-fbc62-default-rtdb.firebaseio.com",
+  projectId:         "TU_PROYECTO",
+  storageBucket:     "TU_PROYECTO.appspot.com",
+  messagingSenderId: "TU_SENDER_ID",
+  appId:             "TU_APP_ID"
+};
+
+// Paleta de colores para pestañas — se asigna automáticamente por orden de llegada
+const PALETA_COLORES = [
+  '#38bdf8', // celeste
+  '#34d399', // verde
+  '#fb923c', // naranja
+  '#a78bfa', // morado
+  '#f472b6', // rosa
+  '#facc15', // amarillo
+  '#60a5fa', // azul
+  '#f87171', // rojo
+];
+
+const UMBRAL = { frio:15, calor:30, calorExtremo:35, humedad:80, viento:30 };
+
+// ════════════════════════════════════════════
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+// Estaciones descubiertas: { id -> { id, nombre, ubicacion, path, color, indice } }
+const estacionesVivas = {};
+let totalConectadas   = 0;
+let primeraEstacion   = null; // id de la primera en cargarse
+
+// ════════════════════════════════════════════
+//  FONDO DINÁMICO
+// ════════════════════════════════════════════
+const canvas = document.getElementById('sky-canvas');
+const ctx    = canvas.getContext('2d');
+let skyState = 'day', particles = [], clouds = [];
+
+function resizeCanvas() { canvas.width=window.innerWidth; canvas.height=window.innerHeight; }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function initClouds() {
+  clouds=Array.from({length:5},()=>({x:Math.random()*canvas.width,y:40+Math.random()*120,w:120+Math.random()*180,h:40+Math.random()*40,speed:0.1+Math.random()*0.2,alpha:0.15+Math.random()*0.2}));
+}
+function initRain(count=180) {
+  particles=Array.from({length:count},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height,len:8+Math.random()*14,speed:6+Math.random()*8,alpha:0.2+Math.random()*0.4}));
+}
+function initStars(count=120) {
+  particles=Array.from({length:count},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height*0.7,r:0.5+Math.random()*1.5,alpha:0.3+Math.random()*0.7,twinkle:Math.random()*Math.PI*2}));
+}
+function drawSky() {
+  const w=canvas.width,h=canvas.height; let grad;
+  if (skyState==='night'){grad=ctx.createLinearGradient(0,0,0,h*.6);grad.addColorStop(0,'#020617');grad.addColorStop(1,'#0f172a');}
+  else if (skyState==='rain'||skyState==='storm'){grad=ctx.createLinearGradient(0,0,0,h*.6);grad.addColorStop(0,'#1e293b');grad.addColorStop(1,'#334155');}
+  else{const hr=new Date().getHours();if(hr>=6&&hr<10){grad=ctx.createLinearGradient(0,0,0,h*.6);grad.addColorStop(0,'#0c4a6e');grad.addColorStop(.5,'#7c3aed');grad.addColorStop(1,'#f97316');}else if(hr>=18&&hr<21){grad=ctx.createLinearGradient(0,0,0,h*.6);grad.addColorStop(0,'#0f172a');grad.addColorStop(.5,'#7c2d12');grad.addColorStop(1,'#fbbf24');}else{grad=ctx.createLinearGradient(0,0,0,h*.6);grad.addColorStop(0,'#0369a1');grad.addColorStop(1,'#0ea5e9');}}
+  ctx.clearRect(0,0,w,h);ctx.fillStyle=grad;ctx.fillRect(0,0,w,h*.6);
+  const fg=ctx.createLinearGradient(0,h*.35,0,h*.65);fg.addColorStop(0,'rgba(0,0,0,0)');fg.addColorStop(1,'rgba(10,14,26,1)');ctx.fillStyle=fg;ctx.fillRect(0,h*.35,w,h*.35);
+}
+function drawSun() {
+  if(skyState!=='day')return;const hr=new Date().getHours();if(hr<6||hr>=20)return;
+  const p=(hr-6)/14,sx=canvas.width*(.1+p*.8),sy=canvas.height*(.25-Math.sin(p*Math.PI)*.15);
+  const halo=ctx.createRadialGradient(sx,sy,0,sx,sy,80);halo.addColorStop(0,'rgba(253,224,71,.35)');halo.addColorStop(.4,'rgba(253,186,116,.15)');halo.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=halo;ctx.beginPath();ctx.arc(sx,sy,80,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#fde047';ctx.beginPath();ctx.arc(sx,sy,22,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#fef08a';ctx.beginPath();ctx.arc(sx,sy,16,0,Math.PI*2);ctx.fill();
+}
+function drawCloud(cx,cy,w,h,alpha) {
+  ctx.fillStyle=`rgba(100,120,160,${alpha*.35})`;ctx.beginPath();ctx.ellipse(cx,cy+h*.55,w*.48,h*.22,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=`rgba(220,230,245,${alpha*.7})`;ctx.beginPath();ctx.ellipse(cx,cy+h*.25,w*.48,h*.32,0,0,Math.PI*2);ctx.fill();
+  [{ox:-w*.28,oy:0,rx:w*.22,ry:h*.42},{ox:w*.28,oy:0,rx:w*.22,ry:h*.38},{ox:0,oy:-h*.08,rx:w*.26,ry:h*.5},{ox:-w*.12,oy:-h*.04,rx:w*.18,ry:h*.4},{ox:w*.14,oy:-h*.06,rx:w*.2,ry:h*.44}].forEach(b=>{ctx.fillStyle=`rgba(240,246,255,${alpha*.85})`;ctx.beginPath();ctx.ellipse(cx+b.ox,cy+b.oy,b.rx,b.ry,0,0,Math.PI*2);ctx.fill();});
+  ctx.fillStyle=`rgba(255,255,255,${alpha*.55})`;ctx.beginPath();ctx.ellipse(cx-w*.06,cy-h*.12,w*.16,h*.22,-0.3,0,Math.PI*2);ctx.fill();
+}
+function drawClouds(){clouds.forEach(c=>{c.x+=c.speed;if(c.x>canvas.width+c.w)c.x=-c.w;drawCloud(c.x,c.y,c.w,c.h,skyState==='day'?c.alpha:c.alpha*2.2);});}
+function drawRain(){ctx.strokeStyle='rgba(147,197,253,0.5)';ctx.lineWidth=1;particles.forEach(p=>{p.y+=p.speed;p.x-=p.speed*.3;if(p.y>canvas.height){p.y=-p.len;p.x=Math.random()*canvas.width;}ctx.globalAlpha=p.alpha;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.speed*.3*.8,p.y+p.len);ctx.stroke();});ctx.globalAlpha=1;}
+function drawStars(){particles.forEach(p=>{p.twinkle+=.02;const a=p.alpha*(.6+.4*Math.sin(p.twinkle));ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();});}
+function animateSky(){drawSky();drawSun();drawClouds();if(skyState==='rain'||skyState==='storm')drawRain();if(skyState==='night')drawStars();requestAnimationFrame(animateSky);}
+function setSkyState(lluvia,viento){const hr=new Date().getHours();let ns=lluvia>0&&viento>30?'storm':lluvia>0?'rain':hr<6||hr>=20?'night':'day';if(ns!==skyState){skyState=ns;particles=[];if(skyState==='rain'||skyState==='storm')initRain(skyState==='storm'?280:180);if(skyState==='night')initStars();}}
+initClouds();initStars();animateSky();
+
+// ════════════════════════════════════════════
+//  FULLSCREEN
+// ════════════════════════════════════════════
+window.toggleFullscreen = function() {
+  if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); document.getElementById('btn-fullscreen').textContent='✕ Salir'; }
+  else { document.exitFullscreen(); document.getElementById('btn-fullscreen').textContent='⛶ Pantalla completa'; }
+};
+
+// ════════════════════════════════════════════
+//  ESTADO POR ESTACIÓN
+// ════════════════════════════════════════════
+const estado = {};
+
+function initEstado(id) {
+  if (!estado[id]) {
+    estado[id] = { prevVals:{}, anguloActual:0, horasRango:6, charts:null, unsubHist:null, registrosActuales:[] };
+  }
+}
+
+// ════════════════════════════════════════════
+//  GENERADOR HTML DE PANEL
+// ════════════════════════════════════════════
+function crearPanelHTML(est) {
+  return `
+  <div class="estacion-panel" id="panel-${est.id}" data-est="${est.id}">
+    <div class="banner-alerta" id="alerta-${est.id}"></div>
+
+    <div class="est-info-bar">
+      <div class="est-info-chip">📍 Ubicación: <b id="info-ubicacion-${est.id}">${est.ubicacion}</b></div>
+      <div class="est-info-chip">🔗 Ruta Firebase: <b>${est.path}</b></div>
+      <div class="est-info-chip" id="info-version-${est.id}" style="display:none">⚙️ FW: <b id="info-fw-${est.id}">—</b></div>
+    </div>
+
+    <div class="frase-card" id="frase-card-${est.id}">
+      <div class="frase-icon" id="frase-icon-${est.id}">🌡️</div>
+      <div class="frase-texto" id="frase-txt-${est.id}">Cargando datos de ${est.nombre}...</div>
+    </div>
+
+    <div class="racha-bar">
+      <div class="racha-item"><span class="racha-label">Días sin lluvia</span><span class="racha-val" id="sinlluvia-${est.id}">—</span></div>
+      <div class="racha-item"><span class="racha-label">Racha de calor</span><span class="racha-val" id="rachaCalor-${est.id}">—</span></div>
+      <div class="racha-item"><span class="racha-label">Temp. máx. hoy</span><span class="racha-val" id="tempMax-${est.id}">—</span></div>
+      <div class="racha-item"><span class="racha-label">Temp. mín. hoy</span><span class="racha-val" id="tempMin-${est.id}">—</span></div>
+    </div>
+
+    <div class="grid-sensores">
+      <div class="card card-temp" id="card-temp-${est.id}">
+        <div class="card-label">Temperatura</div>
+        <div class="card-valor" id="temp-${est.id}">--<span class="card-unidad">°C</span></div>
+        <div class="card-sub" id="subtemp-${est.id}">—</div>
+      </div>
+      <div class="card card-hum" id="card-hum-${est.id}">
+        <div class="card-label">Humedad</div>
+        <div class="card-valor" id="hum-${est.id}">--<span class="card-unidad">%</span></div>
+        <div class="card-sub" id="subhum-${est.id}">—</div>
+      </div>
+      <div class="card card-pres" id="card-pres-${est.id}">
+        <div class="card-label">Presión</div>
+        <div class="card-valor" id="pres-${est.id}">--<span class="card-unidad">hPa</span></div>
+        <div class="card-sub">Presión atmosférica</div>
+      </div>
+      <div class="card card-viento" id="card-viento-${est.id}">
+        <div class="card-label">Viento</div>
+        <div class="card-valor" id="viento-${est.id}">--<span class="card-unidad">km/h</span></div>
+        <div class="card-sub" id="subviento-${est.id}">—</div>
+      </div>
+      <div class="card card-dir card-rosa" id="card-dir-${est.id}">
+        <div class="card-label">Dirección</div>
+        <svg class="rosa-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(167,139,250,0.2)" stroke-width="1"/>
+          <circle cx="60" cy="60" r="36" fill="none" stroke="rgba(167,139,250,0.1)" stroke-width="1"/>
+          <circle cx="60" cy="60" r="4"  fill="rgba(167,139,250,0.3)"/>
+          <line x1="60" y1="8"  x2="60" y2="14" stroke="rgba(167,139,250,0.35)" stroke-width="1"/>
+          <line x1="60" y1="106" x2="60" y2="112" stroke="rgba(167,139,250,0.35)" stroke-width="1"/>
+          <line x1="8"  y1="60" x2="14" y2="60" stroke="rgba(167,139,250,0.35)" stroke-width="1"/>
+          <line x1="106" y1="60" x2="112" y2="60" stroke="rgba(167,139,250,0.35)" stroke-width="1"/>
+          <text x="60" y="7"   text-anchor="middle" fill="#a78bfa" font-size="9" font-family="Space Mono" font-weight="700">N</text>
+          <text x="60" y="118" text-anchor="middle" fill="#64748b" font-size="8" font-family="Space Mono">S</text>
+          <text x="4"  y="64"  text-anchor="middle" fill="#64748b" font-size="8" font-family="Space Mono">O</text>
+          <text x="116" y="64" text-anchor="middle" fill="#64748b" font-size="8" font-family="Space Mono">E</text>
+          <g id="rosa-${est.id}" class="rosa-flecha" transform="translate(60,60) rotate(0)">
+            <polygon points="0,-46 -6,0 0,-10 6,0"  fill="#a78bfa" opacity="0.95"/>
+            <polygon points="0,46  -6,0 0,10  6,0"  fill="rgba(167,139,250,0.28)"/>
+          </g>
+        </svg>
+        <div class="card-sub" id="subdir-${est.id}">—</div>
+      </div>
+      <div class="card card-lluvia" id="card-lluvia-${est.id}">
+        <div class="card-label">Lluvia</div>
+        <div class="card-valor" id="lluvia-${est.id}">--<span class="card-unidad">mm</span></div>
+        <div class="card-sub" id="sublluvia-${est.id}">—</div>
+      </div>
+    </div>
+
+    <div class="ultima-act" id="ts-${est.id}">Última actualización: —</div>
+
+    <div class="seccion-titulo">Historial</div>
+    <div class="rango-btns">
+      <button class="btn-rango activo" onclick="cambiarRango('${est.id}',6,this)">6h</button>
+      <button class="btn-rango" onclick="cambiarRango('${est.id}',24,this)">24h</button>
+      <button class="btn-rango" onclick="cambiarRango('${est.id}',72,this)">3 días</button>
+      <button class="btn-rango" onclick="cambiarRango('${est.id}',168,this)">7 días</button>
+      <button class="btn-csv" onclick="descargarCSV('${est.id}')" title="Descargar datos del rango actual como CSV">↓ Descargar CSV</button>
+    </div>
+    <div class="grid-graficas">
+      <div class="card-grafica"><div class="card-grafica-titulo">Temperatura (°C)</div><canvas id="cht-temp-${est.id}" height="160"></canvas></div>
+      <div class="card-grafica"><div class="card-grafica-titulo">Humedad (%)</div><canvas id="cht-hum-${est.id}" height="160"></canvas></div>
+      <div class="card-grafica"><div class="card-grafica-titulo">Presión (hPa)</div><canvas id="cht-pres-${est.id}" height="160"></canvas></div>
+      <div class="card-grafica"><div class="card-grafica-titulo">Viento (km/h)</div><canvas id="cht-viento-${est.id}" height="160"></canvas></div>
+    </div>
+
+    <div class="seccion-titulo">Registros recientes</div>
+    <div class="tabla-wrap">
+      <div id="tabla-cargando-${est.id}" class="cargando"><div class="spinner"></div><br>Cargando registros...</div>
+      <table id="tabla-${est.id}" style="display:none">
+        <thead><tr><th>Fecha / Hora</th><th>Temp.</th><th>Humedad</th><th>Presión</th><th>Viento</th><th>Dirección</th><th>Lluvia</th></tr></thead>
+        <tbody id="tbody-${est.id}"></tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════
+//  REGISTRAR Y MONTAR UNA ESTACIÓN NUEVA
+// ════════════════════════════════════════════
+const tabsBar   = document.getElementById('tabs-bar');
+const panelesEl = document.getElementById('paneles');
+
+function registrarEstacion(id, info, esNueva) {
+  if (estacionesVivas[id]) {
+    // Ya existe — actualizar nombre/ubicacion si cambiaron
+    const est = estacionesVivas[id];
+    if (info.nombre)    { est.nombre = info.nombre; document.getElementById('tab-'+id).querySelector('.tab-nombre').textContent = info.nombre; }
+    if (info.ubicacion) { est.ubicacion = info.ubicacion; const el=document.getElementById('info-ubicacion-'+id); if(el) el.textContent=info.ubicacion; }
+    return;
+  }
+
+  const indice = Object.keys(estacionesVivas).length;
+  const color  = PALETA_COLORES[indice % PALETA_COLORES.length];
+  const path   = info.path || id; // si el ESP32 envía su propia ruta, la usa; si no, usa el id del nodo
+
+  const est = { id, nombre: info.nombre||id, ubicacion: info.ubicacion||'—', path, color, indice };
+  estacionesVivas[id] = est;
+  initEstado(id);
+
+  // Ocultar panel vacío si es la primera
+  document.getElementById('panel-vacio').style.display = 'none';
+
+  // ── Crear pestaña ──
+  const btn = document.createElement('button');
+  btn.className = 'tab-btn';
+  btn.id = 'tab-'+id;
+  btn.style.setProperty('--tab-color', color);
+  btn.innerHTML = `<span class="tab-dot"></span><span class="tab-nombre">${est.nombre}</span> <span style="color:var(--muted);font-size:10px">· ${est.ubicacion}</span>${esNueva?'<span class="tab-new-badge">NUEVA</span>':''}`;
+  btn.onclick = () => {
+    activarTab(id);
+    // Quitar badge "NUEVA" al hacer clic
+    const badge = btn.querySelector('.tab-new-badge');
+    if (badge) badge.remove();
+    // Cargar historial si no se ha hecho
+    if (!estado[id].charts) cargarHistorial(id, est.path);
+  };
+  tabsBar.appendChild(btn);
+
+  // ── Crear panel ──
+  const div = document.createElement('div');
+  div.innerHTML = crearPanelHTML(est);
+  panelesEl.appendChild(div.firstElementChild);
+
+  // ── Si es la primera estación, activarla y cargar historial ──
+  if (!primeraEstacion) {
+    primeraEstacion = id;
+    activarTab(id);
+    cargarHistorial(id, est.path);
+  }
+
+  // ── Mostrar versión de firmware si viene ──
+  if (info.firmware) {
+    const elV = document.getElementById('info-version-'+id);
+    const elF = document.getElementById('info-fw-'+id);
+    if (elV) elV.style.display='flex';
+    if (elF) elF.textContent = info.firmware;
+  }
+
+  // ── Actualizar contador de conectadas ──
+  totalConectadas++;
+  document.getElementById('txt-conectadas').textContent = totalConectadas + (totalConectadas===1?' estación':' estaciones');
+
+  // ── Suscribir datos actuales ──
+  suscribirActual(est);
+}
+
+// ════════════════════════════════════════════
+//  AUTO-DESCUBRIMIENTO — escucha /registro en tiempo real
+// ════════════════════════════════════════════
+let splashTimeout = setTimeout(() => ocultarSplash(), 4000); // timeout máximo splash
+
+onValue(ref(db, '/registro'), snap => {
+  clearTimeout(splashTimeout);
+  ocultarSplash();
+
+  const data = snap.val();
+  if (!data) return;
+
+  Object.entries(data).forEach(([id, info]) => {
+    if (!info || typeof info !== 'object') return;
+    const esNueva = !estacionesVivas[id];
+    registrarEstacion(id, info, esNueva);
+  });
+});
+
+function ocultarSplash() {
+  const splash = document.getElementById('splash');
+  splash.classList.add('oculto');
+  setTimeout(()=>splash.style.display='none', 600);
+}
+
+// ════════════════════════════════════════════
+//  ACTIVAR PESTAÑA
+// ════════════════════════════════════════════
+function activarTab(id) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('activa'));
+  document.querySelectorAll('.estacion-panel').forEach(p=>p.classList.remove('activa'));
+  const tabEl = document.getElementById('tab-'+id);
+  const panEl = document.getElementById('panel-'+id);
+  if (tabEl) tabEl.classList.add('activa');
+  if (panEl) panEl.classList.add('activa');
+}
+
+// ════════════════════════════════════════════
+//  ANIMACIÓN NUMÉRICA
+// ════════════════════════════════════════════
+function setValorAnimado(id, nuevoTexto, nuevoNum, estId) {
+  const el = document.getElementById(id); if (!el) return;
+  const prev = estado[estId].prevVals;
+  if (prev[id]!==undefined && prev[id]!==nuevoNum) { el.classList.remove('actualizando'); void el.offsetWidth; el.classList.add('actualizando'); }
+  prev[id] = nuevoNum;
+  el.innerHTML = nuevoTexto;
+}
+
+// ════════════════════════════════════════════
+//  ROSA DE LOS VIENTOS
+// ════════════════════════════════════════════
+function actualizarRosa(estId, grados) {
+  const e = estado[estId];
+  let diff = grados - e.anguloActual;
+  if (diff > 180)  diff -= 360;
+  if (diff < -180) diff += 360;
+  e.anguloActual += diff;
+  const flecha = document.getElementById('rosa-'+estId);
+  if (flecha) flecha.setAttribute('transform', `translate(60,60) rotate(${e.anguloActual})`);
+}
+
+// ════════════════════════════════════════════
+//  FRASES Y ALERTAS
+// ════════════════════════════════════════════
+function generarFrase(estId, d) {
+  const frases=[]; let icono='🌤️';
+  const t=d.temperatura, h=d.humedad, v=d.viento_kmh, ll=d.lluvia_mm;
+  if (esNum(ll)&&ll>0)                         { frases.push('Está lloviendo. <strong>¡No olvides tu paraguas!</strong>'); icono='🌧️'; }
+  if (esNum(t)) {
+    if (t>=UMBRAL.calorExtremo)                { frases.push('Calor extremo. <strong>Hidrátate y evita el sol directo.</strong>'); icono='🥵'; }
+    else if (t>=UMBRAL.calor)                  { frases.push('Hace calor. <strong>Lleva agua contigo.</strong>'); icono='☀️'; }
+    else if (t<UMBRAL.frio)                    { frases.push('Está haciendo frío. <strong>Abrígate antes de salir.</strong>'); icono='🧥'; }
+    else                                        { frases.push('Temperatura agradable.'); icono='😊'; }
+  } else if (!frases.length)                   { frases.push('Sin datos suficientes para evaluar el clima.'); }
+  if (esNum(h)&&h>UMBRAL.humedad)              frases.push('Alta humedad, puede sentirse más caluroso.');
+  if (esNum(v)&&v>UMBRAL.viento)              { frases.push('Viento fuerte. <strong>Ten cuidado en moto o bicicleta.</strong>'); if(esNum(ll)&&ll>0)icono='⛈️';else icono='💨'; }
+  document.getElementById('frase-icon-'+estId).textContent = icono;
+  document.getElementById('frase-txt-'+estId).innerHTML = frases.join(' · ');
+}
+
+function generarAlertas(estId, d) {
+  const a=[];
+  if (esNum(d.temperatura)) {
+    if (d.temperatura>=UMBRAL.calorExtremo) a.push('⚠️ Calor extremo: '+d.temperatura.toFixed(1)+'°C');
+    if (d.temperatura<UMBRAL.frio)          a.push('🥶 Temperatura baja: '+d.temperatura.toFixed(1)+'°C');
+  }
+  if (esNum(d.viento_kmh)&&d.viento_kmh>UMBRAL.viento) a.push('💨 Viento fuerte: '+d.viento_kmh.toFixed(1)+' km/h');
+  if (esNum(d.lluvia_mm)&&d.lluvia_mm>5)               a.push('🌧️ Lluvia intensa: '+d.lluvia_mm.toFixed(1)+' mm');
+  if (esNum(d.humedad)&&d.humedad>UMBRAL.humedad)      a.push('💧 Humedad alta: '+d.humedad.toFixed(0)+'%');
+  const banner = document.getElementById('alerta-'+estId);
+  if (a.length) { banner.innerHTML='<strong>Alertas activas:</strong> '+a.join('  ·  '); banner.classList.add('visible'); }
+  else banner.classList.remove('visible');
+}
+
+// ════════════════════════════════════════════
+//  SUSCRIPCIÓN A DATOS ACTUALES
+// ════════════════════════════════════════════
+// helper: muestra u oculta una card según si el valor existe
+function toggleCard(cardId, visible) {
+  const el = document.getElementById(cardId);
+  if (el) el.classList.toggle('card-oculta', !visible);
+}
+// helper: devuelve true si el valor es un número válido
+function esNum(v) { return v !== null && v !== undefined && typeof v === 'number' && !isNaN(v); }
+
+function suscribirActual(est) {
+  onValue(ref(db, est.path+'/actual'), snap => {
+    const d = snap.val();
+    const tabBtn = document.getElementById('tab-'+est.id);
+    if (!d) { if(tabBtn) tabBtn.classList.add('sin-datos'); return; }
+    if(tabBtn) tabBtn.classList.remove('sin-datos');
+
+    // ── Temperatura ──
+    const tieneTemp = esNum(d.temperatura);
+    toggleCard('card-temp-'+est.id, tieneTemp);
+    if (tieneTemp) {
+      setValorAnimado('temp-'+est.id, d.temperatura.toFixed(1)+'<span class="card-unidad">°C</span>', d.temperatura, est.id);
+      document.getElementById('subtemp-'+est.id).textContent = d.temperatura>=UMBRAL.calorExtremo?'🔴 Calor extremo':d.temperatura>=UMBRAL.calor?'🟠 Calor':d.temperatura<UMBRAL.frio?'🔵 Frío':'🟢 Normal';
+    }
+
+    // ── Humedad ──
+    const tieneHum = esNum(d.humedad);
+    toggleCard('card-hum-'+est.id, tieneHum);
+    if (tieneHum) {
+      setValorAnimado('hum-'+est.id, d.humedad.toFixed(0)+'<span class="card-unidad">%</span>', d.humedad, est.id);
+      document.getElementById('subhum-'+est.id).textContent = d.humedad>UMBRAL.humedad?'Muy húmedo':'Normal';
+    }
+
+    // ── Presión ──
+    const tienePres = esNum(d.presion);
+    toggleCard('card-pres-'+est.id, tienePres);
+    if (tienePres) {
+      setValorAnimado('pres-'+est.id, d.presion.toFixed(1)+'<span class="card-unidad">hPa</span>', d.presion, est.id);
+    }
+
+    // ── Viento velocidad ──
+    const tieneViento = esNum(d.viento_kmh);
+    toggleCard('card-viento-'+est.id, tieneViento);
+    if (tieneViento) {
+      setValorAnimado('viento-'+est.id, d.viento_kmh.toFixed(1)+'<span class="card-unidad">km/h</span>', d.viento_kmh, est.id);
+      document.getElementById('subviento-'+est.id).textContent = d.viento_kmh>UMBRAL.viento?'⚠️ Viento fuerte':'Normal';
+    }
+
+    // ── Dirección del viento (card con rosa) ──
+    const tieneDir = (d.viento_dir !== null && d.viento_dir !== undefined && d.viento_dir !== '') || esNum(d.viento_grados);
+    toggleCard('card-dir-'+est.id, tieneDir);
+    if (tieneDir) {
+      const grados = esNum(d.viento_grados) ? d.viento_grados : 0;
+      const dirTxt = d.viento_dir || '—';
+      document.getElementById('subdir-'+est.id).textContent = grados.toFixed(0)+'° · '+dirTxt;
+      actualizarRosa(est.id, grados);
+    }
+
+    // ── Lluvia ──
+    const tieneLluvia = esNum(d.lluvia_mm);
+    toggleCard('card-lluvia-'+est.id, tieneLluvia);
+    if (tieneLluvia) {
+      setValorAnimado('lluvia-'+est.id, d.lluvia_mm.toFixed(1)+'<span class="card-unidad">mm</span>', d.lluvia_mm, est.id);
+      document.getElementById('sublluvia-'+est.id).textContent = d.lluvia_mm>0?'Lloviendo':'Sin lluvia';
+    }
+
+    // ── Fondo animado (usa lo que haya disponible) ──
+    setSkyState(tieneLluvia ? d.lluvia_mm : 0, tieneViento ? d.viento_kmh : 0);
+    generarFrase(est.id, d);
+    generarAlertas(est.id, d);
+
+    if (d.timestamp) {
+      const ts=new Date(d.timestamp);
+      document.getElementById('ts-'+est.id).textContent='Última actualización: '+ts.toLocaleDateString('es-MX')+' '+ts.toLocaleTimeString('es-MX');
+    }
+  });
+}
+
+// ════════════════════════════════════════════
+//  GRÁFICAS
+// ════════════════════════════════════════════
+const chartCfg = (label, color) => ({
+  type:'line', data:{labels:[],datasets:[{label,data:[],borderColor:color,backgroundColor:color+'18',borderWidth:2,pointRadius:2,pointHoverRadius:4,tension:.4,fill:true}]},
+  options:{responsive:true,animation:false,
+    plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a2235',titleColor:'#94a3b8',bodyColor:'#f1f5f9',borderColor:'rgba(255,255,255,.1)',borderWidth:1}},
+    scales:{x:{ticks:{color:'#475569',font:{family:'Space Mono',size:9},maxTicksLimit:6},grid:{color:'rgba(255,255,255,.04)'}},y:{ticks:{color:'#475569',font:{family:'Space Mono',size:9}},grid:{color:'rgba(255,255,255,.04)'}}}
+  }
+});
+
+function initCharts(estId) {
+  if (estado[estId].charts) return;
+  estado[estId].charts = {
+    temp:   new Chart(document.getElementById('cht-temp-'+estId),   chartCfg('Temperatura','#fb923c')),
+    hum:    new Chart(document.getElementById('cht-hum-'+estId),    chartCfg('Humedad',    '#38bdf8')),
+    pres:   new Chart(document.getElementById('cht-pres-'+estId),   chartCfg('Presión',    '#818cf8')),
+    viento: new Chart(document.getElementById('cht-viento-'+estId), chartCfg('Viento',     '#a78bfa')),
+  };
+}
+
+function actualizarGraficas(estId, registros) {
+  const c=estado[estId].charts; if(!c)return;
+  const labels=[],temps=[],hums=[],press=[],vientos=[];
+  registros.forEach(r=>{
+    const t=new Date(r.timestamp);
+    labels.push(t.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}));
+    temps.push(esNum(r.temperatura)?r.temperatura:null);
+    hums.push(esNum(r.humedad)?r.humedad:null);
+    press.push(esNum(r.presion)?r.presion:null);
+    vientos.push(esNum(r.viento_kmh)?r.viento_kmh:null);
+  });
+  const upd=(ch,d)=>{ch.data.labels=labels;ch.data.datasets[0].data=d;ch.update();};
+  upd(c.temp,temps);upd(c.hum,hums);upd(c.pres,press);upd(c.viento,vientos);
+}
+
+// ════════════════════════════════════════════
+//  TABLA
+// ════════════════════════════════════════════
+function actualizarTabla(estId, registros) {
+  estado[estId].registrosActuales = registros;
+  const tbody = document.getElementById('tbody-'+estId);
+  tbody.innerHTML='';
+  [...registros].reverse().slice(0,50).forEach(r=>{
+    const t=new Date(r.timestamp);
+    const fecha=t.toLocaleDateString('es-MX')+' '+t.toLocaleTimeString('es-MX');
+    const tc=esNum(r.temperatura)?(r.temperatura>=UMBRAL.calorExtremo?'#f87171':r.temperatura>=UMBRAL.calor?'#fb923c':r.temperatura<UMBRAL.frio?'#60a5fa':'#34d399'):'#64748b';
+    tbody.innerHTML+=`<tr>
+      <td style="font-family:'Space Mono',monospace;font-size:11px;color:#64748b">${fecha}</td>
+      <td>${esNum(r.temperatura)?`<span class="badge" style="background:${tc}22;color:${tc}">${r.temperatura.toFixed(1)}°C</span>`:'—'}</td>
+      <td>${esNum(r.humedad)?r.humedad.toFixed(0)+'%':'—'}</td>
+      <td>${esNum(r.presion)?r.presion.toFixed(1)+' hPa':'—'}</td>
+      <td>${esNum(r.viento_kmh)?r.viento_kmh.toFixed(1)+' km/h':'—'}</td>
+      <td style="font-family:'Space Mono',monospace">${r.viento_dir||'—'}</td>
+      <td>${esNum(r.lluvia_mm)?r.lluvia_mm.toFixed(1)+' mm':'—'}</td>
+    </tr>`;
+  });
+  document.getElementById('tabla-cargando-'+estId).style.display='none';
+  document.getElementById('tabla-'+estId).style.display='table';
+}
+
+// ════════════════════════════════════════════
+//  RACHAS
+// ════════════════════════════════════════════
+function calcularRachas(estId, registros) {
+  if (!registros.length) return;
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  const hoyRegs=registros.filter(r=>new Date(r.timestamp)>=hoy);
+  if (hoyRegs.length) {
+    const temps=hoyRegs.map(r=>r.temperatura).filter(v=>esNum(v));
+    if (temps.length) {
+      document.getElementById('tempMax-'+estId).textContent=Math.max(...temps).toFixed(1)+'°C';
+      document.getElementById('tempMin-'+estId).textContent=Math.min(...temps).toFixed(1)+'°C';
+    }
+  }
+  const porDia={};
+  registros.forEach(r=>{
+    const d=new Date(r.timestamp);d.setHours(0,0,0,0);const k=d.getTime();
+    if(!porDia[k])porDia[k]={lluvia:0,maxTemp:-Infinity,tieneLluvia:false,tieneTemp:false};
+    if(esNum(r.lluvia_mm)){porDia[k].lluvia+=r.lluvia_mm;porDia[k].tieneLluvia=true;}
+    if(esNum(r.temperatura)){porDia[k].maxTemp=Math.max(porDia[k].maxTemp,r.temperatura);porDia[k].tieneTemp=true;}
+  });
+  const dias=Object.keys(porDia).sort((a,b)=>b-a);
+  let sinLluvia=0,rachaCalor=0;
+  for(const dk of dias){if(porDia[dk].tieneLluvia&&porDia[dk].lluvia===0)sinLluvia++;else if(porDia[dk].tieneLluvia)break;}
+  for(const dk of dias){if(porDia[dk].tieneTemp&&porDia[dk].maxTemp>=UMBRAL.calor)rachaCalor++;else if(porDia[dk].tieneTemp)break;}
+  document.getElementById('sinlluvia-'+estId).textContent=sinLluvia+(sinLluvia===1?' día':' días');
+  document.getElementById('rachaCalor-'+estId).textContent=rachaCalor+(rachaCalor===1?' día':' días');
+}
+
+// ════════════════════════════════════════════
+//  HISTORIAL
+// ════════════════════════════════════════════
+function cargarHistorial(estId, path) {
+  const e=estado[estId];
+  initCharts(estId);
+  const limite=Math.ceil(e.horasRango*6)+10;
+  const q=query(ref(db, path+'/historial'), orderByKey(), limitToLast(limite));
+  if (e.unsubHist) e.unsubHist();
+  e.unsubHist=onValue(q, snap=>{
+    const datos=snap.val(); if(!datos)return;
+    const corte=Date.now()-e.horasRango*3600*1000;
+    const registros=Object.values(datos).filter(r=>new Date(r.timestamp).getTime()>=corte).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+    actualizarGraficas(estId,registros);
+    actualizarTabla(estId,registros);
+    calcularRachas(estId,registros);
+  },{onlyOnce:true});
+}
+
+// ════════════════════════════════════════════
+//  DESCARGA CSV
+// ════════════════════════════════════════════
+window.descargarCSV = function(estId) {
+  const registros=estado[estId].registrosActuales||[];
+  if(!registros.length){alert('No hay datos para descargar en el rango actual.');return;}
+  const est=estacionesVivas[estId];
+  const horas=estado[estId].horasRango;
+  const rangoLabel=horas===6?'6h':horas===24?'24h':horas===72?'3dias':'7dias';
+  const encabezado=['Fecha','Hora','Temperatura_C','Humedad_%','Presion_hPa','Viento_kmh','Direccion_grados','Direccion','Lluvia_mm'];
+  const filas=registros.map(r=>{const t=new Date(r.timestamp);return[t.toLocaleDateString('es-MX'),t.toLocaleTimeString('es-MX'),esNum(r.temperatura)?r.temperatura.toFixed(2):'',esNum(r.humedad)?r.humedad.toFixed(1):'',esNum(r.presion)?r.presion.toFixed(2):'',esNum(r.viento_kmh)?r.viento_kmh.toFixed(2):'',(esNum(r.viento_grados)?r.viento_grados.toFixed(1):''),r.viento_dir||'',esNum(r.lluvia_mm)?r.lluvia_mm.toFixed(2):''].join(',');});
+  const csv=[encabezado.join(','),...filas].join('\n');
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`${(est?.nombre||estId).replace(/\s+/g,'_')}_${rangoLabel}_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+};
+
+// ════════════════════════════════════════════
+//  CAMBIAR RANGO
+// ════════════════════════════════════════════
+window.cambiarRango = function(estId, horas, btn) {
+  estado[estId].horasRango=horas;
+  document.querySelectorAll(`#panel-${estId} .btn-rango`).forEach(b=>b.classList.remove('activo'));
+  btn.classList.add('activo');
+  cargarHistorial(estId, estacionesVivas[estId].path);
+};
+
+</script>
+</body>
+</html>

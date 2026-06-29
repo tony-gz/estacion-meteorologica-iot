@@ -1,0 +1,1324 @@
+openapi: 3.1.0
+info:
+  title: WeatherStation Backend API (Red de Estaciones)
+  description: >
+    API REST del backend central de la Red de Estaciones Meteorológicas
+    Inteligentes (CLIMBOT). Único componente con acceso a la base de datos
+    PostgreSQL (almacén único: sistema + lecturas meteorológicas) y a Gemini (IA).
+    Las estaciones ESP32 publican sus lecturas a través de `/api/device/**` (nunca
+    a un almacén externo). Autenticación JWT (Bearer) con roles ADMIN, RESPONSABLE,
+    INVESTIGADOR y USUARIO para usuarios, y token de estación → JWT de dispositivo
+    para los ESP32.
+  version: 3.1.0
+  contact:
+    name: WeatherStation
+servers:
+  - url: http://localhost:8080
+    description: Desarrollo local
+  - url: https://weatherstation-backend.onrender.com
+    description: Producción (Render)
+
+tags:
+  - name: Auth
+    description: Registro, login y refresh de tokens de usuario
+  - name: Dispositivo
+    description: Registro, autenticación, ingesta, latido y config de las estaciones ESP32
+  - name: Público
+    description: Tier público de solo lectura (sin cuenta); sin IA ni datos sensibles
+  - name: Escuelas
+    description: Gestión de escuelas (ADMIN)
+  - name: Estaciones
+    description: Registro, gobernanza y consulta de estaciones
+  - name: Solicitudes
+    description: Solicitudes de alta de estaciones pendientes de aprobación
+  - name: Usuarios
+    description: Gestión de usuarios (ADMIN)
+  - name: IA
+    description: Análisis inteligente con Gemini (con rate limiting)
+  - name: Alertas
+    description: Alertas generadas por el motor de reglas
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ───────────────────────── AUTH (usuarios) ─────────────────────────
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrar un nuevo usuario (rol USUARIO)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Usuario creado y autenticado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Autenticación correcta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renovar el access token (rota el refresh token)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Nuevos tokens emitidos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ─────────────────────── DISPOSITIVO (ESP32) ───────────────────────
+  /api/device/register:
+    post:
+      tags: [Dispositivo]
+      summary: Solicitud de alta iniciada por el dispositivo (queda PENDING)
+      description: >
+        Un ESP32 no aprovisionado solicita su registro. Crea una solicitud
+        PENDING; no devuelve token hasta que un ADMIN apruebe. Rate limited.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EstacionRegistroRequest' }
+      responses:
+        '202':
+          description: Solicitud registrada (pendiente de aprobación)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolicitudResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/device/auth:
+    post:
+      tags: [Dispositivo]
+      summary: Handshake de la estación (token permanente → JWT de dispositivo)
+      description: >
+        Valida que la estación exista y esté APPROVED y que el token sea válido.
+        Devuelve un JWT de dispositivo de vida corta. Registra la conexión.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceAuthRequest' }
+      responses:
+        '200':
+          description: Autenticación de estación correcta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceAuthResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Estación no aprobada (PENDING/REJECTED/DISABLED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/device/data:
+    post:
+      tags: [Dispositivo]
+      summary: Publicar una lectura (el backend la valida y la persiste en PostgreSQL)
+      description: >
+        Requiere el JWT de dispositivo obtenido en /api/device/auth. El backend
+        valida formato y rangos, persiste en PostgreSQL (lectura_actual y, según
+        cadencia, el histórico lecturas) y actualiza la última conexión.
+      security:
+        - deviceAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceDataRequest' }
+      responses:
+        '202':
+          description: Lectura aceptada y persistida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceDataResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Estación no autorizada para publicar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '422':
+          description: Lectura sintácticamente válida pero fuera de rango
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/device/heartbeat:
+    post:
+      tags: [Dispositivo]
+      summary: Latido de salud de la estación (firmware, hardware, RSSI; sin batería)
+      description: >
+        Requiere el JWT de dispositivo. Actualiza la última conexión y permite
+        derivar ONLINE/OFFLINE. No recolecta telemetría de batería.
+      security:
+        - deviceAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceHeartbeatRequest' }
+      responses:
+        '204': { description: Latido registrado }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/device/config:
+    get:
+      tags: [Dispositivo]
+      summary: Configuración remota de la estación (intervalo, muestreo, zona horaria)
+      security:
+        - deviceAuth: []
+      responses:
+        '200':
+          description: Configuración vigente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceConfigResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ──────────────────────── PÚBLICO (sin auth) ───────────────────────
+  /api/public/stations:
+    get:
+      tags: [Público]
+      summary: Listado público de estaciones aprobadas (sin cuenta)
+      security: []
+      responses:
+        '200':
+          description: Estaciones públicas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PublicEstacionResponse' }
+
+  /api/public/weather/latest:
+    get:
+      tags: [Público]
+      summary: Última lectura por estación (para mapa/listado público)
+      security: []
+      parameters:
+        - { in: query, name: municipio, schema: { type: string } }
+      responses:
+        '200':
+          description: Clima actual público
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PublicEstacionResponse' }
+
+  /api/public/statistics:
+    get:
+      tags: [Público]
+      summary: Estadísticas agregadas no sensibles (red / municipio / escuela)
+      security: []
+      parameters:
+        - { in: query, name: municipio, schema: { type: string } }
+        - { in: query, name: escuelaId, schema: { type: string, format: uuid } }
+        - { in: query, name: desde, schema: { type: string, format: date-time } }
+        - { in: query, name: hasta, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Estadísticas públicas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicEstadisticaResponse' }
+
+  # ──────────────────────────── ESCUELAS ─────────────────────────────
+  /escuelas:
+    get:
+      tags: [Escuelas]
+      summary: Listar escuelas (autenticado)
+      responses:
+        '200':
+          description: Lista de escuelas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EscuelaResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Escuelas]
+      summary: Crear escuela (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EscuelaRequest' }
+      responses:
+        '201':
+          description: Escuela creada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EscuelaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /escuelas/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Escuelas]
+      summary: Ver una escuela (autenticado)
+      responses:
+        '200':
+          description: Escuela
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EscuelaResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Escuelas]
+      summary: Actualizar una escuela (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EscuelaRequest' }
+      responses:
+        '200':
+          description: Escuela actualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EscuelaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Escuelas]
+      summary: Eliminar una escuela (ADMIN)
+      responses:
+        '204': { description: Eliminada }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Escuela con estaciones asociadas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  # ─────────────────────── ESTACIONES (gobernanza) ───────────────────
+  /estaciones:
+    get:
+      tags: [Estaciones]
+      summary: Listar estaciones (visibilidad según rol)
+      description: >
+        USUARIO/INVESTIGADOR ven solo APPROVED+habilitadas; RESPONSABLE además las
+        de su escuela en cualquier estado; ADMIN todas. Filtros opcionales.
+      parameters:
+        - { in: query, name: escuelaId, schema: { type: string, format: uuid } }
+        - { in: query, name: estado, schema: { $ref: '#/components/schemas/EstadoEstacion' } }
+      responses:
+        '200':
+          description: Lista de estaciones
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EstacionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Estaciones]
+      summary: Registrar una estación (ADMIN o RESPONSABLE de la escuela) → PENDING
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EstacionRegistroRequest' }
+      responses:
+        '201':
+          description: Estación creada en estado PENDING
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstacionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /estaciones/{id}:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    get:
+      tags: [Estaciones]
+      summary: Detalle de una estación
+      responses:
+        '200':
+          description: Estación
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstacionResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Estaciones]
+      summary: Actualizar metadata de la estación (ADMIN o RESPONSABLE de su escuela)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EstacionUpdateRequest' }
+      responses:
+        '200':
+          description: Estación actualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstacionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Estaciones]
+      summary: Eliminar una estación (ADMIN)
+      responses:
+        '204': { description: Eliminada }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/aprobar:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    post:
+      tags: [Estaciones]
+      summary: Aprobar una estación (ADMIN) → APPROVED + genera token (una vez)
+      responses:
+        '200':
+          description: Estación aprobada; token devuelto una única vez
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StationTokenResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: La estación no está en un estado aprobable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /estaciones/{id}/rechazar:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    post:
+      tags: [Estaciones]
+      summary: Rechazar una estación (ADMIN) → REJECTED
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EstacionAccionRequest' }
+      responses:
+        '200':
+          description: Estación rechazada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstacionResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/deshabilitar:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    post:
+      tags: [Estaciones]
+      summary: Deshabilitar una estación aprobada (ADMIN) → DISABLED
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EstacionAccionRequest' }
+      responses:
+        '200':
+          description: Estación deshabilitada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstacionResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/reactivar:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    post:
+      tags: [Estaciones]
+      summary: Reactivar una estación deshabilitada/en mantenimiento (ADMIN) → APPROVED
+      responses:
+        '200':
+          description: Estación reactivada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstacionResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/mantenimiento:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    post:
+      tags: [Estaciones]
+      summary: Poner una estación en mantenimiento (ADMIN) → MAINTENANCE
+      responses:
+        '200':
+          description: Estación en mantenimiento (no podrá publicar)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstacionResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/regenerar-token:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    post:
+      tags: [Estaciones]
+      summary: Regenerar el token de la estación (ADMIN) — revoca el anterior
+      responses:
+        '200':
+          description: Token regenerado; devuelto una única vez
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StationTokenResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/conexiones:
+    parameters:
+      - { $ref: '#/components/parameters/EstacionId' }
+      - { in: query, name: page, schema: { type: integer, default: 0 } }
+      - { in: query, name: size, schema: { type: integer, default: 50 } }
+    get:
+      tags: [Estaciones]
+      summary: Historial de conexiones de la estación (ADMIN o RESPONSABLE)
+      responses:
+        '200':
+          description: Conexiones registradas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ConexionResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────── ESTACIONES (datos meteorológicos, lectura) ──────────
+  /estaciones/{id}/actual:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    get:
+      tags: [Estaciones]
+      summary: Última lectura de la estación (cualquier rol)
+      responses:
+        '200':
+          description: Lectura actual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LecturaResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/historial:
+    parameters:
+      - { $ref: '#/components/parameters/EstacionId' }
+      - in: query
+        name: desde
+        schema: { type: string, format: date-time }
+        description: Inicio del rango (ISO-8601). Por defecto, 24 h atrás.
+      - in: query
+        name: hasta
+        schema: { type: string, format: date-time }
+        description: Fin del rango (ISO-8601). Por defecto, ahora.
+    get:
+      tags: [Estaciones]
+      summary: Historial por rango (RESPONSABLE de su escuela, INVESTIGADOR, ADMIN)
+      responses:
+        '200':
+          description: Lecturas ordenadas cronológicamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LecturaResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/ultimas24h:
+    parameters: [ { $ref: '#/components/parameters/EstacionId' } ]
+    get:
+      tags: [Estaciones]
+      summary: Lecturas de las últimas 24 horas (RESPONSABLE, INVESTIGADOR, ADMIN)
+      responses:
+        '200':
+          description: Lecturas de las últimas 24 h
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LecturaResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estaciones/{id}/estadisticas:
+    parameters:
+      - { $ref: '#/components/parameters/EstacionId' }
+      - { in: query, name: desde, schema: { type: string, format: date-time } }
+      - { in: query, name: hasta, schema: { type: string, format: date-time } }
+    get:
+      tags: [Estaciones]
+      summary: Estadísticas agregadas del rango (RESPONSABLE, INVESTIGADOR, ADMIN)
+      responses:
+        '200':
+          description: Estadísticas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstadisticasResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /estadisticas:
+    get:
+      tags: [Estaciones]
+      summary: Estadísticas avanzadas agrupadas (INVESTIGADOR, ADMIN)
+      description: >
+        Series agregadas por día o mes, con ámbito red/escuela/municipio/estación.
+      parameters:
+        - { in: query, name: agrupacion, schema: { type: string, enum: [DIA, MES], default: DIA } }
+        - { in: query, name: escuelaId, schema: { type: string, format: uuid } }
+        - { in: query, name: municipio, schema: { type: string } }
+        - { in: query, name: estacionId, schema: { type: string, format: uuid } }
+        - { in: query, name: desde, schema: { type: string, format: date-time } }
+        - { in: query, name: hasta, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Estadísticas agrupadas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EstadisticaAgrupadaResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ──────────────────────────── SOLICITUDES ──────────────────────────
+  /solicitudes:
+    get:
+      tags: [Solicitudes]
+      summary: Listar solicitudes de alta (ADMIN; RESPONSABLE solo las de su escuela)
+      parameters:
+        - { in: query, name: estado, schema: { $ref: '#/components/schemas/EstadoSolicitud' } }
+        - { in: query, name: escuelaId, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Lista de solicitudes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SolicitudResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /solicitudes/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Solicitudes]
+      summary: Ver una solicitud (ADMIN o RESPONSABLE de su escuela)
+      responses:
+        '200':
+          description: Solicitud
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolicitudResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /solicitudes/{id}/aprobar:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Solicitudes]
+      summary: Aprobar la solicitud (ADMIN) → crea estación APPROVED + token (una vez)
+      responses:
+        '200':
+          description: Solicitud aprobada; token de la nueva estación (una vez)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StationTokenResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /solicitudes/{id}/rechazar:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Solicitudes]
+      summary: Rechazar la solicitud (ADMIN)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EstacionAccionRequest' }
+      responses:
+        '200':
+          description: Solicitud rechazada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolicitudResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ──────────────────────────── USUARIOS ─────────────────────────────
+  /usuarios:
+    get:
+      tags: [Usuarios]
+      summary: Listar usuarios (ADMIN)
+      parameters:
+        - { in: query, name: page, schema: { type: integer, default: 0 } }
+        - { in: query, name: size, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: Lista paginada de usuarios
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageUsuarioResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Usuarios]
+      summary: Crear usuario con rol (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UsuarioRequest' }
+      responses:
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsuarioResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /usuarios/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Usuarios]
+      summary: Ver un usuario (ADMIN)
+      responses:
+        '200':
+          description: Usuario
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsuarioResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Usuarios]
+      summary: Actualizar un usuario (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UsuarioUpdateRequest' }
+      responses:
+        '200':
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsuarioResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Usuarios]
+      summary: Eliminar un usuario (ADMIN)
+      responses:
+        '204': { description: Eliminado }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ────────────────────────────── IA ─────────────────────────────────
+  /ia/preguntar:
+    post:
+      tags: [IA]
+      summary: Pregunta en lenguaje natural sobre una estación (cualquier rol)
+      description: Rate limited. Fundamentado en datos reales de PostgreSQL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IaPreguntaRequest' }
+      responses:
+        '200':
+          description: Respuesta de IA
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /ia/resumen:
+    post:
+      tags: [IA]
+      summary: Resumen del clima de una ventana temporal (cualquier rol)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IaResumenRequest' }
+      responses:
+        '200':
+          description: Resumen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /ia/prediccion:
+    post:
+      tags: [IA]
+      summary: Estimación cualitativa basada en tendencias (cualquier rol)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IaPrediccionRequest' }
+      responses:
+        '200':
+          description: Predicción cualitativa
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ──────────────────────────── ALERTAS ──────────────────────────────
+  /alertas:
+    get:
+      tags: [Alertas]
+      summary: Listar alertas (cualquier rol)
+      parameters:
+        - { in: query, name: estacionId, schema: { type: string, format: uuid } }
+        - { in: query, name: tipo, schema: { $ref: '#/components/schemas/TipoAlerta' } }
+        - { in: query, name: estado, schema: { $ref: '#/components/schemas/EstadoAlerta' } }
+      responses:
+        '200':
+          description: Lista de alertas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AlertaResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /alertas/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Alertas]
+      summary: Detalle de una alerta (cualquier rol)
+      responses:
+        '200':
+          description: Alerta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertaResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT de usuario (claim `rol`).
+    deviceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT de dispositivo emitido por /api/device/auth (claim `type=DEVICE`).
+
+  parameters:
+    EstacionId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+      description: UUID público de la estación
+      example: 7b1f2c34-5d6e-4a8b-9c0d-1e2f3a4b5c6d
+
+  responses:
+    BadRequest:
+      description: Datos de entrada inválidos
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Unauthorized:
+      description: No autenticado o credenciales inválidas
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Forbidden:
+      description: Rol/recurso no autorizado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Conflict:
+      description: Conflicto (p. ej. email/clave ya existe)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    TooManyRequests:
+      description: Límite de peticiones excedido (IA o dispositivo)
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Segundos hasta poder reintentar
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    ServiceUnavailable:
+      description: Servicio externo (Gemini) o base de datos no disponible
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+
+  schemas:
+    Rol:
+      type: string
+      enum: [ADMIN, RESPONSABLE, INVESTIGADOR, USUARIO]
+    EstadoEstacion:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, DISABLED, MAINTENANCE]
+    Conectividad:
+      type: string
+      enum: [ONLINE, OFFLINE]
+      description: Derivado de ultimaConexion + umbral; no es un estado almacenado.
+    EstadoSolicitud:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+    TipoAlerta:
+      type: string
+      enum: [LLUVIA, VIENTO_FUERTE, CALOR_EXTREMO, ESTACION_DESCONECTADA, SENSOR_SIN_RESPUESTA]
+    Severidad:
+      type: string
+      enum: [BAJA, MEDIA, ALTA]
+    EstadoAlerta:
+      type: string
+      enum: [ACTIVA, RESUELTA]
+
+    RegisterRequest:
+      type: object
+      required: [nombre, email, password]
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 100 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 72, format: password }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    AuthResponse:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresIn: { type: integer, description: Segundos de vida del access token }
+        usuario: { $ref: '#/components/schemas/UsuarioResponse' }
+
+    UsuarioRequest:
+      type: object
+      required: [nombre, email, password, rol]
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 100 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 72, format: password }
+        rol: { $ref: '#/components/schemas/Rol' }
+        escuelaId:
+          type: string
+          format: uuid
+          description: Requerido si rol = RESPONSABLE
+    UsuarioUpdateRequest:
+      type: object
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 100 }
+        email: { type: string, format: email }
+        rol: { $ref: '#/components/schemas/Rol' }
+        escuelaId: { type: string, format: uuid }
+        activo: { type: boolean }
+        password: { type: string, minLength: 8, maxLength: 72, format: password }
+    UsuarioResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        email: { type: string, format: email }
+        rol: { $ref: '#/components/schemas/Rol' }
+        escuelaId: { oneOf: [ { type: string, format: uuid }, { type: 'null' } ] }
+        escuelaNombre: { oneOf: [ { type: string }, { type: 'null' } ] }
+        activo: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    PageUsuarioResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/UsuarioResponse' }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+
+    EscuelaRequest:
+      type: object
+      required: [nombre]
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 150 }
+        clave: { type: string, description: CCT u otra clave oficial }
+        municipio: { type: string }
+        ubicacion: { type: string }
+        latitud: { type: number, format: double }
+        longitud: { type: number, format: double }
+        contactoEmail: { type: string, format: email }
+    EscuelaResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        clave: { type: string }
+        municipio: { type: string }
+        ubicacion: { type: string }
+        latitud: { type: number, format: double }
+        longitud: { type: number, format: double }
+        contactoEmail: { type: string, format: email }
+        totalEstaciones: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    EstacionRegistroRequest:
+      type: object
+      required: [nombre, escuelaId]
+      properties:
+        nombre: { type: string, minLength: 2, maxLength: 120 }
+        escuelaId: { type: string, format: uuid }
+        ubicacion: { type: string }
+        municipio: { type: string }
+        latitud: { type: number, format: double }
+        longitud: { type: number, format: double }
+        firmware: { type: string, maxLength: 40 }
+    EstacionUpdateRequest:
+      type: object
+      properties:
+        nombre: { type: string, maxLength: 120 }
+        ubicacion: { type: string }
+        municipio: { type: string }
+        latitud: { type: number, format: double }
+        longitud: { type: number, format: double }
+        responsableId: { type: string, format: uuid }
+    EstacionAccionRequest:
+      type: object
+      properties:
+        motivo: { type: string, maxLength: 300 }
+    EstacionResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        uuid: { type: string, format: uuid }
+        nombre: { type: string }
+        descripcion: { type: string }
+        escuelaId: { type: string, format: uuid }
+        escuelaNombre: { type: string }
+        responsableId: { oneOf: [ { type: string, format: uuid }, { type: 'null' } ] }
+        responsableNombre: { oneOf: [ { type: string }, { type: 'null' } ] }
+        ubicacion: { type: string }
+        municipio: { type: string }
+        latitud: { type: number, format: double }
+        longitud: { type: number, format: double }
+        altitud: { type: number, format: double }
+        firmware: { type: string }
+        hardware: { type: string }
+        ultimoRssi: { oneOf: [ { type: integer }, { type: 'null' } ] }
+        estado: { $ref: '#/components/schemas/EstadoEstacion' }
+        conectividad: { $ref: '#/components/schemas/Conectividad' }
+        fechaRegistro: { type: string, format: date-time }
+        ultimaConexion: { oneOf: [ { type: string, format: date-time }, { type: 'null' } ] }
+        enLinea: { type: boolean }
+        ultimaLectura:
+          oneOf:
+            - { $ref: '#/components/schemas/LecturaResponse' }
+            - { type: 'null' }
+    StationTokenResponse:
+      type: object
+      description: El token en claro se muestra una única vez y no se vuelve a exponer.
+      properties:
+        estacionId: { type: string, format: uuid }
+        uuid: { type: string, format: uuid }
+        token: { type: string, description: Token permanente de la estación (en claro, solo aquí) }
+        generadoEn: { type: string, format: date-time }
+        aviso: { type: string, example: "Guarde este token: no se volverá a mostrar." }
+    ConexionResponse:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        ip: { type: string }
+        firmware: { type: string }
+        evento: { type: string, example: DATA_OK }
+        detalle: { type: string }
+
+    SolicitudResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        uuidPropuesto: { type: string, format: uuid }
+        nombre: { type: string }
+        escuelaId: { type: string, format: uuid }
+        escuelaNombre: { type: string }
+        ubicacion: { type: string }
+        municipio: { type: string }
+        firmware: { type: string }
+        estado: { $ref: '#/components/schemas/EstadoSolicitud' }
+        motivoRechazo: { oneOf: [ { type: string }, { type: 'null' } ] }
+        estacionId: { oneOf: [ { type: string, format: uuid }, { type: 'null' } ] }
+        createdAt: { type: string, format: date-time }
+        resueltaEn: { oneOf: [ { type: string, format: date-time }, { type: 'null' } ] }
+
+    DeviceAuthRequest:
+      type: object
+      required: [uuid, token]
+      properties:
+        uuid: { type: string, format: uuid }
+        token: { type: string, description: Token permanente de la estación }
+        firmware: { type: string, maxLength: 40 }
+    DeviceAuthResponse:
+      type: object
+      properties:
+        deviceToken: { type: string, description: JWT de dispositivo de vida corta }
+        tokenType: { type: string, example: Bearer }
+        expiresIn: { type: integer, description: Segundos de vida del JWT de dispositivo }
+    DeviceDataRequest:
+      type: object
+      required: [timestamp, temperatura, humedad, presion, vientoKmh, lluviaMm]
+      properties:
+        timestamp: { type: string, format: date-time }
+        temperatura: { type: number, format: double, example: 24.5 }
+        humedad: { type: number, format: double, minimum: 0, maximum: 100, example: 60 }
+        presion: { type: number, format: double, minimum: 0.1, example: 1013.2 }
+        vientoKmh: { type: number, format: double, minimum: 0, example: 12.3 }
+        vientoDir: { type: string, example: NE }
+        vientoGrados: { type: number, format: double, minimum: 0, maximum: 360, example: 45.0 }
+        lluviaMm: { type: number, format: double, minimum: 0, example: 0.0 }
+    DeviceDataResponse:
+      type: object
+      properties:
+        estado: { type: string, example: ACEPTADA }
+        recibidoEn: { type: string, format: date-time }
+        historialActualizado: { type: boolean }
+    DeviceHeartbeatRequest:
+      type: object
+      description: Latido de salud. SIN telemetría de batería.
+      properties:
+        firmware: { type: string, maxLength: 40 }
+        hardware: { type: string, maxLength: 60 }
+        rssi: { type: integer, description: WiFi.RSSI() en dBm }
+        uptimeSeg: { type: integer, format: int64 }
+    DeviceConfigResponse:
+      type: object
+      properties:
+        intervaloEnvioSeg: { type: integer, example: 60 }
+        muestreoSeg: { type: integer, example: 5 }
+        zonaHoraria: { type: string, example: America/Mexico_City }
+        servidorAhora: { type: string, format: date-time }
+    PublicEstacionResponse:
+      type: object
+      properties:
+        uuid: { type: string, format: uuid }
+        nombre: { type: string }
+        municipio: { type: string }
+        latitud: { type: number, format: double }
+        longitud: { type: number, format: double }
+        escuelaNombre: { type: string }
+        conectividad: { $ref: '#/components/schemas/Conectividad' }
+        ultimaLectura:
+          oneOf:
+            - { $ref: '#/components/schemas/LecturaResponse' }
+            - { type: 'null' }
+    PublicEstadisticaResponse:
+      type: object
+      properties:
+        ambito: { type: string, example: "MUNICIPIO:Chilpancingo" }
+        desde: { type: string, format: date-time }
+        hasta: { type: string, format: date-time }
+        estaciones: { type: integer }
+        muestras: { type: integer }
+        temperatura: { $ref: '#/components/schemas/Agregado' }
+        humedad: { $ref: '#/components/schemas/Agregado' }
+        presion: { $ref: '#/components/schemas/Agregado' }
+        vientoKmh: { $ref: '#/components/schemas/Agregado' }
+        lluviaTotalMm: { type: number, format: double }
+    EstadisticaAgrupadaResponse:
+      type: object
+      properties:
+        ambito: { type: string, example: "ESCUELA:7b1f..." }
+        agrupacion: { type: string, enum: [DIA, MES] }
+        serie:
+          type: array
+          items:
+            type: object
+            properties:
+              periodo: { type: string, format: date-time }
+              muestras: { type: integer }
+              tempProm: { type: number, format: double }
+              tempMin: { type: number, format: double }
+              tempMax: { type: number, format: double }
+              humProm: { type: number, format: double }
+              presProm: { type: number, format: double }
+              vientoProm: { type: number, format: double }
+              lluviaTotal: { type: number, format: double }
+
+    LecturaResponse:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        temperatura: { type: number, format: double, example: 24.5 }
+        humedad: { type: number, format: double, example: 60 }
+        presion: { type: number, format: double, example: 1013.2 }
+        vientoKmh: { type: number, format: double, example: 12.3 }
+        vientoDir: { type: string, example: NE }
+        vientoGrados:
+          oneOf:
+            - { type: number, format: double }
+            - { type: 'null' }
+          description: Solo presente en la lectura actual; null en historial
+        lluviaMm: { type: number, format: double, example: 0.0 }
+    Agregado:
+      type: object
+      properties:
+        min: { type: number, format: double }
+        max: { type: number, format: double }
+        promedio: { type: number, format: double }
+    EstadisticasResponse:
+      type: object
+      properties:
+        estacionId: { type: string, format: uuid }
+        desde: { type: string, format: date-time }
+        hasta: { type: string, format: date-time }
+        muestras: { type: integer }
+        temperatura: { $ref: '#/components/schemas/Agregado' }
+        humedad: { $ref: '#/components/schemas/Agregado' }
+        presion: { $ref: '#/components/schemas/Agregado' }
+        vientoKmh: { $ref: '#/components/schemas/Agregado' }
+        lluviaTotalMm: { type: number, format: double }
+
+    IaPreguntaRequest:
+      type: object
+      required: [estacionId, pregunta]
+      properties:
+        estacionId: { type: string, format: uuid }
+        pregunta: { type: string, maxLength: 500, example: "¿Va a llover hoy?" }
+    IaResumenRequest:
+      type: object
+      required: [estacionId]
+      properties:
+        estacionId: { type: string, format: uuid }
+        horas: { type: integer, minimum: 1, maximum: 168, default: 24 }
+    IaPrediccionRequest:
+      type: object
+      required: [estacionId]
+      properties:
+        estacionId: { type: string, format: uuid }
+    IaResponse:
+      type: object
+      properties:
+        estacionId: { type: string, format: uuid }
+        respuesta: { type: string }
+        rangoDesde: { type: string, format: date-time }
+        rangoHasta: { type: string, format: date-time }
+        muestrasUsadas: { type: integer }
+        advertencias:
+          type: array
+          items: { type: string }
+        generadoEn: { type: string, format: date-time }
+
+    AlertaResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        estacionId: { type: string, format: uuid }
+        tipo: { $ref: '#/components/schemas/TipoAlerta' }
+        severidad: { $ref: '#/components/schemas/Severidad' }
+        estado: { $ref: '#/components/schemas/EstadoAlerta' }
+        mensaje: { type: string }
+        valorDisparo: { type: number, format: double }
+        variableDisparo: { type: string }
+        detectadaEn: { type: string, format: date-time }
+        resueltaEn:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: 'null' }
+
+    ApiError:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        error: { type: string }
+        code: { type: string, example: ESTACION_NO_APROBADA }
+        message: { type: string }
+        path: { type: string }
+        fieldErrors:
+          type: object
+          additionalProperties: { type: string }

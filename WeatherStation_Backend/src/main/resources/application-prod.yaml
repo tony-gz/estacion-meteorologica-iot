@@ -1,0 +1,11 @@
+# Perfil de producción (Render). Todos los secretos vienen por variables de entorno.
+spring:
+  jpa:
+    properties:
+      hibernate:
+        format_sql: false
+
+logging:
+  level:
+    root: INFO
+    com.tony.wheatherstation: INFO

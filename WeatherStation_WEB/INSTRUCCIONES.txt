@@ -1,0 +1,131 @@
+// ══════════════════════════════════════════════
+//  RED METEOROLÓGICA CHILPANCINGO
+//  Agrega esto a tu código de ESP32
+//  Requiere: FirebaseESP32, ArduinoJson
+// ══════════════════════════════════════════════
+
+// ── 1. DEFINE ESTO AL INICIO DE TU ARCHIVO ──
+
+#define FIREBASE_HOST  "weatherstation-esp32-fbc62-default-rtdb.firebaseio.com"
+#define FIREBASE_AUTH  "3Rde5aszOw8AtnBWtpnCCpn4RCkSgYhiA63WqCKk"
+
+#define EST_ID         "estacion3"          // Cámbialo por el que te asignen, debe ser diferente para cada estación
+#define EST_NOMBRE     "Mi Estación"        // Nombre que aparece en la página
+#define EST_UBICACION  "Mi Colonia"         // Ubicación descriptiva
+#define EST_FIRMWARE   "1.0.0"             // Tu versión (opcional)
+
+#define PATH_ACTUAL    "/" EST_ID "/actual"
+#define PATH_HISTORIAL "/" EST_ID "/historial/"
+#define PATH_REGISTRO  "/registro/" EST_ID
+
+// ── 2. OBJETOS FIREBASE (junto a tus otros objetos globales) ──
+
+FirebaseData   fbData;
+FirebaseConfig fbConfig;
+FirebaseAuth   fbAuth;
+
+// ── 3. LLAMA ESTA FUNCIÓN UNA VEZ DESPUÉS DE CONECTAR WIFI ──
+
+void iniciarFirebase() {
+  fbConfig.host = FIREBASE_HOST;
+  fbConfig.signer.tokens.legacy_token = FIREBASE_AUTH;
+  Firebase.begin(&fbConfig, &fbAuth);
+  Firebase.reconnectWiFi(true);
+}
+
+// ── 4. LLAMA ESTA FUNCIÓN UNA VEZ AL ARRANCAR (y cada 1h si quieres keepalive) ──
+
+void registrarEstacion() {
+  FirebaseJson info;
+  info.set("nombre",           EST_NOMBRE);
+  info.set("ubicacion",        EST_UBICACION);
+  info.set("path",             EST_ID);
+  info.set("firmware",         EST_FIRMWARE);
+  info.set("ip",               WiFi.localIP().toString());
+  info.set("ultima_conexion",  getTimestamp()); // tu función de timestamp
+  Firebase.setJSON(fbData, PATH_REGISTRO, info);
+}
+
+// ── 5. ENVÍO DE DATOS ACTUALES (llámalo cada 1-5 segundos) ──
+
+void enviarDatosActuales(float temperatura, float humedad, float presion,
+                          float viento_kmh, String viento_dir,
+                          float viento_grados, float lluvia_mm) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  FirebaseJson json;
+  json.set("timestamp",     getTimestamp());
+  json.set("temperatura",   temperatura);
+  json.set("humedad",       humedad);
+  json.set("presion",       presion);
+  json.set("viento_kmh",    viento_kmh);
+  json.set("viento_dir",    viento_dir);
+  json.set("viento_grados", viento_grados);
+  json.set("lluvia_mm",     lluvia_mm);
+  Firebase.setJSON(fbData, PATH_ACTUAL, json);
+}
+
+// ── 6. ENVÍO DE HISTORIAL (llámalo cada 10 minutos) ──
+
+void enviarHistorial(float temperatura, float humedad, float presion,
+                      float viento_kmh, String viento_dir, float lluvia_mm) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  FirebaseJson json;
+  json.set("timestamp",   getTimestamp());
+  json.set("temperatura", temperatura);
+  json.set("humedad",     humedad);
+  json.set("presion",     presion);
+  json.set("viento_kmh",  viento_kmh);
+  json.set("viento_dir",  viento_dir);
+  json.set("lluvia_mm",   lluvia_mm);
+  String ruta = String(PATH_HISTORIAL) + getTimestamp();
+  Firebase.setJSON(fbData, ruta, json);
+}
+
+
+
+
+
+=======================================================
+Formato JSON exacto
+=======================================================
+/estacionN/actual — datos en tiempo real
+
+{
+  "timestamp":     "2026-04-28T15:30:00",
+  "temperatura":   27.4,
+  "humedad":       65.0,
+  "presion":       918.5,
+  "viento_kmh":    12.3,
+  "viento_dir":    "NW",
+  "viento_grados": 314.0,
+  "lluvia_mm":     0.0
+}
+
+
+/estacionN/historial/TIMESTAMP — registro cada 10 min
+{
+  "timestamp":   "2026-04-28T15:30:00",
+  "temperatura": 27.4,
+  "humedad":     65.0,
+  "presion":     918.5,
+  "viento_kmh":  12.3,
+  "viento_dir":  "NW",
+  "lluvia_mm":   0.0
+}
+
+/registro/estacionN — ficha de auto-registro
+
+{
+  "nombre":           "Mi Estación",
+  "ubicacion":        "Mi Colonia",
+  "path":             "estacion2",
+  "firmware":         "1.0.0",
+  "ip":               "192.168.1.50",
+  "ultima_conexion":  "2026-04-28T15:30:00"
+}
+
+
+
+
+
+Y lo más importante: el EST_ID que les asignes debe ser único (estacion2, estacion3...) — si dos ESP32 usan el mismo ID se pisarán los datos.

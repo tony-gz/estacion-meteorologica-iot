@@ -1,0 +1,1 @@
+{"flutter":{"platforms":{"android":{"default":{"projectId":"weatherstation-esp32-fbc62","appId":"1:326771262914:android:9cb6a091e8463841a8c25b","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"weatherstation-esp32-fbc62","configurations":{"android":"1:326771262914:android:9cb6a091e8463841a8c25b"}}}}}}

@@ -1,0 +1,12 @@
+# Perfil de desarrollo local.
+spring:
+  jpa:
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    com.tony.wheatherstation: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG

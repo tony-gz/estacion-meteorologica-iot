@@ -1,0 +1,44 @@
+Cómo correrlo localmente
+
+Necesitas 3 terminales (requisitos: Docker, Java 21, Node 18+). Desde la raíz del proyecto:
+
+1️⃣ PostgreSQL (Docker)
+
+docker run --name ws-pg \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=weatherstation \
+  -p 5432:5432 -d postgres:16
+
+2️⃣ Backend (Spring Boot)
+
+cd WeatherStation_Backend
+export GEMINI_API_KEY="AQ.Ab8RN6IUwGDzVIVIwB2wAWIKdXs637-30XNeqosCwrypDJShCQ"   # opcional: solo para la IA
+./mvnw -DskipTests spring-boot:run
+- Usa por defecto localhost:5432 (usuario/clave postgres), así que no necesitas más variables. Flyway crea el esquema solo (V1→V5). Sin Gemini la app arranca igual, pero la IA dará error controlado.
+- API en http://localhost:8080 · Swagger en http://localhost:8080/swagger-ui.html
+
+3️⃣ Front (React + Vite)
+
+cd WeatherStation_Front
+npm install     # solo la primera vez
+npm run dev
+- Abre http://localhost:5173 (en dev el front hace proxy de /api → backend:8080).
+
+---
+Para entrar
+
+┌───────┬────────────────────────────┬────────────┐
+│  Rol  │           Email            │ Contraseña │
+├───────┼────────────────────────────┼────────────┤
+│ ADMIN │ admin@weatherstation.local │ Admin12345 │
+└───────┴────────────────────────────┴────────────┘
+
+- / sin sesión → landing pública (estaciones, sin IA). Con sesión → home completa + IA.
+- Como ADMIN: /admin → Estaciones → Registrar una estación → Aprobar (te da el token una vez).
+- Para ver datos en vivo, flashea el ESP32 (WeatherStation_ESP32/ESTACION1_ESP32_v3.txt) con ese uuid+token, o simula un dispositivo con curl (POST /api/device/auth → /api/device/data).
+
+Para detener
+
+# Ctrl+C en las terminales del backend y del front, y luego:
+docker rm -f ws-pg
+
+▎ ⚠️ Recuerda: la base arranca vacía (sin estaciones). Lo que sembré durante la revisión estaba en el contenedor que acabo de eliminar. Y conviene rotar tu key de Gemini ya que la compartiste en el chat.

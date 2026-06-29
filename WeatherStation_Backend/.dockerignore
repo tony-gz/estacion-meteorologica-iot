@@ -1,0 +1,14 @@
+target/
+.git/
+.idea/
+*.iml
+*.log
+.mvn/wrapper/maven-wrapper.jar
+HELP.md
+### Secretos: nunca al contexto de build
+.env
+*.env
+firebase-*.json
+*-service-account*.json
+serviceAccountKey.json
+application-local.*

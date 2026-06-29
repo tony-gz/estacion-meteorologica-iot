@@ -1,0 +1,23 @@
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE (global)
+.vscode/
+.idea/
+*.iml
+
+# Entorno / secretos (raíz)
+.env
+*.env
+ADMIN.txt
+.claude/settings.local.json
+
+# Firebase secrets (Flutter)
+WeatherStation_MOVIL/android/app/google-services.json
+WeatherStation_MOVIL/lib/firebase_options.dart
+
+# Node / sistema
+node_modules/

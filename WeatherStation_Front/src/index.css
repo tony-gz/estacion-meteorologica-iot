@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* Modo oscuro por clase .dark en <html> (toggle manual). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: "DM Sans", system-ui, Avenir, Helvetica, Arial, sans-serif;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.dark body {
+  background: #0f172a;
+  color: #e2e8f0;
+}

@@ -1,0 +1,667 @@
+// ============================================================
+//  Estación Meteorológica — ESP32 → Firebase
+//  Versión: BLE en arranque, WiFi después, BLE apagado tras conectar
+//
+//  COMPORTAMIENTO:
+//   1. Al encender, BLE se activa y queda esperando una conexión
+//      durante 60 segundos.
+//   2. Si nadie conecta en 60s → usa la red WiFi guardada (o las
+//      credenciales hardcodeadas, si las definiste abajo).
+//   3. Si alguien conecta vía BLE → espera a recibir SSID + PASS +
+//      el comando APPLY desde la app, sin timeout.
+//   4. Una vez con credenciales (de BLE o de flash), intenta WiFi.
+//   5. Si la conexión a WiFi tiene éxito:
+//        • guarda las credenciales (si vinieron por BLE)
+//        • apaga BLE → libera ~50 KB para que Firebase tenga aire
+//        • sincroniza NTP
+//        • inicializa Firebase y empieza a publicar datos
+//   6. Si la conexión a WiFi falla:
+//        • NO guarda credenciales nuevas (evita boot-loop)
+//        • BLE permanece encendido para reintento
+//        • si llegan credenciales nuevas, el ESP32 reinicia y aplica
+//   7. Para cambiar de red en una estación que ya está corriendo:
+//      reiniciar el ESP32 (botón EN o ciclo de alimentación).
+//
+//  Sensores:
+//    Wire  (Bus 0) SDA=27, SCL=22 → OLED SSD1306 (0x3C) [opcional]
+//    Wire1 (Bus 1) SDA=32, SCL=33 → AHT20 (0x38) / BMP280 (0x77) / AS5600 (0x36)
+//    Pin 34 → Anemómetro
+//    Pin 35 → Pluviómetro
+// ============================================================
+
+#include <Wire.h>
+#include <WiFi.h>
+#include <Adafruit_AHTX0.h>
+#include <Adafruit_BMP280.h>
+#include <AS5600.h>
+#include <FirebaseESP32.h>
+#include <ArduinoJson.h>
+#include <time.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_GFX.h>
+#include <Preferences.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+// ════════════════════════════════════════════════════════════
+//  ✏️  CONFIGURACIÓN DEL USUARIO
+// ════════════════════════════════════════════════════════════
+
+#define EST_ID         "estacion1"
+#define EST_NOMBRE     "Estación Centro"
+#define EST_UBICACION  "Chilpancingo"
+#define EST_FIRMWARE   "2.0.0"
+
+#define FIREBASE_HOST  "weatherstation-esp32-fbc62-default-rtdb.firebaseio.com"
+#define FIREBASE_AUTH  "3Rde5aszOw8AtnBWtpnCCpn4RCkSgYhiA63WqCKk"
+
+// Si dejas vacío, sólo se podrá configurar por BLE o cargar de flash.
+#define WIFI_SSID  ""
+#define WIFI_PASS  ""
+
+// Tiempo de espera de configuración BLE al arrancar
+#define BLE_ESPERA_MS         60000UL   // 60 s sin conexión → red guardada
+#define BLE_GRACIA_DESC_MS    30000UL   // tras desconexión, esperar 30 s por reconexión
+
+// ════════════════════════════════════════════════════════════
+//  FIN DE CONFIGURACIÓN
+// ════════════════════════════════════════════════════════════
+
+#define PATH_ACTUAL    "/" EST_ID "/actual"
+#define PATH_HISTORIAL "/" EST_ID "/historial/"
+#define PATH_REGISTRO  "/registro/" EST_ID
+
+#define PIN_VIENTO  34
+#define PIN_LLUVIA  35
+
+#define OLED_ANCHO  128
+#define OLED_ALTO    64
+#define OLED_ADDR  0x3C
+
+#define PULSOS_POR_VUELTA  1
+#define RADIO_ASPA_M       0.15
+#define ML_POR_PULSO       2.5
+#define AREA_EMBUDO_CM2    100.0
+
+#define INTERVALO_CONSOLA_MS     2000UL
+#define INTERVALO_OLED_MS        4000UL
+#define INTERVALO_ACTUAL_MS      1500UL
+#define INTERVALO_HIST_MS      600000UL
+#define INTERVALO_REGISTRO_MS 3600000UL
+
+#define WIFI_TIMEOUT_MS  20000UL
+
+#define BLE_SERVICE_UUID  "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define BLE_SSID_UUID     "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define BLE_PASS_UUID     "beb5483e-36e1-4688-b7f5-ea07361b26a9"
+#define BLE_STATUS_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+#define BLE_CMD_UUID      "beb5483e-36e1-4688-b7f5-ea07361b26ab"
+
+// ── Objetos ──
+Adafruit_AHTX0    aht;
+Adafruit_BMP280   bmp(&Wire1);
+AS5600            encoder(&Wire1);
+Adafruit_SSD1306  display(OLED_ANCHO, OLED_ALTO, &Wire, -1);
+FirebaseData      fbData;
+FirebaseConfig    fbConfig;
+FirebaseAuth      fbAuth;
+Preferences       prefs;
+
+// ── BLE ──
+BLEServer*          bleServer     = nullptr;
+BLECharacteristic*  bleStatusChar = nullptr;
+volatile bool       bleClienteConectado    = false;
+volatile bool       credencialesRecibidas  = false;
+String              nuevaSSID = "";
+String              nuevaPass = "";
+bool                bleActivo = false;
+
+// ── Sensores / estado ──
+volatile int contViento  = 0;
+volatile int contLluvia  = 0;
+float lluviaAcumulada    = 0.0;
+float velocidadViento    = 0.0;
+int   pantallaActual     = 0;
+bool  oledOK             = false;
+bool  registrado         = false;
+
+unsigned long tAnteriorConsola   = 0;
+unsigned long tAnteriorActual    = 0;
+unsigned long tAnteriorHist      = 0;
+unsigned long tAnteriorViento    = 0;
+unsigned long tAnteriorRegistro  = 0;
+
+void IRAM_ATTR isrViento() { contViento++; }
+void IRAM_ATTR isrLluvia() { contLluvia++; }
+
+// ════════════════════════════════════════════
+//  PREFERENCIAS
+// ════════════════════════════════════════════
+String leerSSID() { prefs.begin("wifi",true); String s=prefs.getString("ssid",""); prefs.end(); return s; }
+String leerPass() { prefs.begin("wifi",true); String p=prefs.getString("pass",""); prefs.end(); return p; }
+void guardarWifi(const String& ssid, const String& pass) {
+  prefs.begin("wifi", false);
+  prefs.putString("ssid", ssid);
+  prefs.putString("pass", pass);
+  prefs.end();
+  Serial.println("[Prefs] Credenciales guardadas: " + ssid);
+}
+
+// ════════════════════════════════════════════
+//  UTILIDADES
+// ════════════════════════════════════════════
+String getTimestamp() {
+  time_t now = time(nullptr);
+  struct tm* t = localtime(&now);
+  if (t == nullptr) return String("1970-01-01T00:00:00");
+  char buf[25];
+  snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d",
+           t->tm_year+1900, t->tm_mon+1, t->tm_mday,
+           t->tm_hour, t->tm_min, t->tm_sec);
+  return String(buf);
+}
+
+bool esValido(float v) { return !isnan(v) && !isinf(v); }
+
+String dirViento(float angulo) {
+  const char* dirs[]={"N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"};
+  int idx = (int)((angulo+11.25)/22.5) % 16;
+  return String(dirs[idx]);
+}
+
+// ════════════════════════════════════════════
+//  BLE — estado por característica STATUS
+// ════════════════════════════════════════════
+void publicarEstado(const String& estado) {
+  Serial.println("[STATUS] " + estado);
+  if (bleStatusChar) {
+    bleStatusChar->setValue(estado.c_str());
+    bleStatusChar->notify();
+  }
+}
+
+class CallbackSSID : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    nuevaSSID = String(c->getValue().c_str());
+    Serial.println("[BLE] SSID: " + nuevaSSID);
+    publicarEstado("SSID_OK");
+  }
+};
+
+class CallbackPass : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    nuevaPass = String(c->getValue().c_str());
+    Serial.println("[BLE] PASS recibido");
+    publicarEstado("PASS_OK");
+  }
+};
+
+class CallbackComando : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    String cmd = String(c->getValue().c_str());
+    cmd.trim(); cmd.toUpperCase();
+    Serial.println("[BLE] CMD: " + cmd);
+    if (cmd == "APPLY") {
+      if (!nuevaSSID.isEmpty()) {
+        credencialesRecibidas = true;
+      } else {
+        publicarEstado("ERR_NO_SSID");
+      }
+    }
+  }
+};
+
+class CallbackConexion : public BLEServerCallbacks {
+  void onConnect(BLEServer* s) override {
+    bleClienteConectado = true;
+    Serial.println("[BLE] Cliente conectado.");
+    if (bleStatusChar) bleStatusChar->setValue("IDLE");
+  }
+  void onDisconnect(BLEServer* s) override {
+    bleClienteConectado = false;
+    Serial.println("[BLE] Cliente desconectado. Re-anunciando.");
+    delay(200);
+    BLEDevice::startAdvertising();
+  }
+};
+
+void iniciarBLE() {
+  String bleNombre = String("Meteo-") + EST_ID;
+  BLEDevice::init(bleNombre.c_str());
+  BLEDevice::setPower(ESP_PWR_LVL_P7);
+
+  bleServer = BLEDevice::createServer();
+  bleServer->setCallbacks(new CallbackConexion());
+
+  BLEService* svc = bleServer->createService(BLE_SERVICE_UUID);
+
+  BLECharacteristic* sc = svc->createCharacteristic(BLE_SSID_UUID, BLECharacteristic::PROPERTY_WRITE);
+  sc->setCallbacks(new CallbackSSID());
+
+  BLECharacteristic* pc = svc->createCharacteristic(BLE_PASS_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pc->setCallbacks(new CallbackPass());
+
+  bleStatusChar = svc->createCharacteristic(BLE_STATUS_UUID,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  bleStatusChar->addDescriptor(new BLE2902());
+  bleStatusChar->setValue("IDLE");
+
+  BLECharacteristic* cc = svc->createCharacteristic(BLE_CMD_UUID, BLECharacteristic::PROPERTY_WRITE);
+  cc->setCallbacks(new CallbackComando());
+
+  svc->start();
+
+  BLEAdvertising* adv = BLEDevice::getAdvertising();
+  adv->addServiceUUID(BLE_SERVICE_UUID);
+  adv->setScanResponse(true);
+  adv->setMinPreferred(0x06);
+  adv->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+
+  bleActivo = true;
+  Serial.println("[BLE] Anunciando como: " + bleNombre);
+}
+
+void apagarBLE() {
+  if (!bleActivo) return;
+  Serial.println("[BLE] Apagando para liberar memoria…");
+  BLEDevice::stopAdvertising();
+  BLEDevice::deinit(true);   // libera controlador BT y memoria asociada
+  bleStatusChar = nullptr;
+  bleServer = nullptr;
+  bleActivo = false;
+  delay(200);
+  Serial.printf("[HEAP] Tras apagar BLE: %u bytes (mayor: %u)\n",
+                ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+}
+
+// ════════════════════════════════════════════
+//  WIFI — conexión bloqueante con timeout
+// ════════════════════════════════════════════
+bool conectarWifi(const String& ssid, const String& pass) {
+  if (ssid.isEmpty()) {
+    Serial.println("[WiFi] Sin credenciales.");
+    return false;
+  }
+  publicarEstado("CONNECTING:" + ssid);
+  Serial.println("[WiFi] Conectando a: " + ssid);
+
+  WiFi.disconnect(true, true);
+  delay(200);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), pass.c_str());
+
+  unsigned long inicio = millis();
+  while (millis() - inicio < WIFI_TIMEOUT_MS) {
+    wl_status_t st = WiFi.status();
+    if (st == WL_CONNECTED) {
+      String ip = WiFi.localIP().toString();
+      Serial.println("[WiFi] OK → " + ip);
+      publicarEstado("WIFI_OK:" + ip);
+      return true;
+    }
+    if (st == WL_NO_SSID_AVAIL) {
+      publicarEstado("NO_AP");
+      Serial.println("[WiFi] SSID no encontrado.");
+      return false;
+    }
+    if (st == WL_CONNECT_FAILED) {
+      publicarEstado("BAD_PASSWORD");
+      Serial.println("[WiFi] Contraseña rechazada.");
+      return false;
+    }
+    delay(250);
+  }
+  publicarEstado("WIFI_FAIL");
+  Serial.println("[WiFi] Timeout.");
+  return false;
+}
+
+// ════════════════════════════════════════════
+//  NTP — espera bloqueante (necesario para SSL)
+// ════════════════════════════════════════════
+bool esperarNTP(unsigned long timeout_ms) {
+  Serial.println("[NTP] Sincronizando…");
+  unsigned long t0 = millis();
+  while (time(nullptr) < 1700000000UL && (millis() - t0) < timeout_ms) {
+    delay(250);
+  }
+  if (time(nullptr) >= 1700000000UL) {
+    Serial.printf("[NTP] OK (epoch=%lu)\n", (unsigned long)time(nullptr));
+    return true;
+  }
+  Serial.println("[NTP] Timeout (SSL puede fallar).");
+  return false;
+}
+
+// ════════════════════════════════════════════
+//  FIREBASE
+// ════════════════════════════════════════════
+void initFirebase() {
+  fbConfig.host = FIREBASE_HOST;
+  fbConfig.signer.tokens.legacy_token = FIREBASE_AUTH;
+  Firebase.begin(&fbConfig, &fbAuth);
+  Firebase.reconnectWiFi(true);
+  Serial.printf("[HEAP] Tras Firebase.begin: %u bytes\n", ESP.getFreeHeap());
+}
+
+void registrarEnFirebase() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  FirebaseJson info;
+  info.set("nombre",          EST_NOMBRE);
+  info.set("ubicacion",       EST_UBICACION);
+  info.set("path",            EST_ID);
+  info.set("firmware",        EST_FIRMWARE);
+  info.set("ip",              WiFi.localIP().toString());
+  info.set("ultima_conexion", getTimestamp());
+
+  if (Firebase.setJSON(fbData, PATH_REGISTRO, info)) {
+    registrado = true;
+    Serial.println("[Registro] ✓ " EST_ID);
+  } else {
+    Serial.println("[Registro] ✗ " + fbData.errorReason());
+  }
+}
+
+// ════════════════════════════════════════════
+//  RESET I2C
+// ════════════════════════════════════════════
+void resetBusI2C() {
+  Wire.end(); delay(200); Wire.begin(27,22); delay(200);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) Serial.println("[I2C] OLED no respondió.");
+  Wire1.end(); delay(200); Wire1.begin(32,33); delay(200);
+  aht.begin(&Wire1);
+  bmp.begin(0x77);
+  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
+                  Adafruit_BMP280::SAMPLING_X2,
+                  Adafruit_BMP280::SAMPLING_X16,
+                  Adafruit_BMP280::FILTER_X16,
+                  Adafruit_BMP280::STANDBY_MS_500);
+  encoder.begin();
+}
+
+// ════════════════════════════════════════════
+//  OLED
+// ════════════════════════════════════════════
+void initOLED() {
+  Wire.begin(27, 22);
+  oledOK = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
+  if (!oledOK) Serial.println("[OLED] No encontrado.");
+}
+
+void mostrarOLED(float temp, float hum, float pres, float viento, String dir, float lluvia, bool wifi, bool fb) {
+  static unsigned long tOLED = 0;
+  if (millis() - tOLED < INTERVALO_OLED_MS) return;
+  tOLED = millis();
+  if (!oledOK) return;
+
+  display.clearDisplay();
+  display.setTextSize(1); display.setTextColor(SSD1306_WHITE);
+
+  switch (pantallaActual % 3) {
+    case 0:
+      display.setCursor(0,0);  display.println(EST_NOMBRE);
+      display.setCursor(0,12); display.print("Temp: "); display.print(temp,1); display.println(" C");
+      display.setCursor(0,22); display.print("Hum:  "); display.print(hum,0); display.println(" %");
+      display.setCursor(0,32); display.print("Pres: "); display.print(pres,1); display.println(" hPa");
+      display.setCursor(0,52); display.print(wifi ? "WiFi:OK" : "Sin WiFi"); display.print(" "); display.print(fb ? "FB:OK" : "");
+      break;
+    case 1:
+      display.setCursor(0,0);  display.println("VIENTO");
+      display.setCursor(0,12); display.print("Vel:  "); display.print(viento,1); display.println(" km/h");
+      display.setCursor(0,22); display.print("Dir:  "); display.println(dir);
+      display.setCursor(0,32); display.print("Lluv: "); display.print(lluvia,1); display.println(" mm");
+      break;
+    case 2:
+      display.setCursor(0,0);  display.println("RED METEO");
+      display.setCursor(0,12); display.println(EST_ID);
+      display.setCursor(0,22); display.println(EST_UBICACION);
+      display.setCursor(0,32); display.print("IP: "); display.println(wifi ? WiFi.localIP().toString() : String("---"));
+      display.setCursor(0,52); display.print(registrado ? "Registrado" : "Esperando");
+      break;
+  }
+  pantallaActual++;
+  display.display();
+}
+
+// ════════════════════════════════════════════
+//  ESPERAR CONFIGURACIÓN BLE
+// ════════════════════════════════════════════
+//  - Sin cliente conectado: timeout de BLE_ESPERA_MS desde el arranque.
+//  - Con cliente conectado: SIN timeout (espera a que envíe credenciales).
+//  - Si un cliente se conectó y luego se desconectó sin enviar nada:
+//    da una ventana adicional de BLE_GRACIA_DESC_MS para reconectar.
+//  Devuelve true si llegaron credenciales por BLE.
+bool esperarConfiguracionBLE() {
+  Serial.printf("[BLE] Esperando configuración (timeout %lus sin conexión)…\n",
+                BLE_ESPERA_MS / 1000);
+
+  unsigned long inicio = millis();
+  unsigned long ultimaDesconexion = 0;
+  bool huboCliente = false;
+
+  while (true) {
+    if (credencialesRecibidas) {
+      Serial.println("[BLE] Credenciales recibidas por la app.");
+      return true;
+    }
+
+    if (bleClienteConectado) {
+      huboCliente = true;
+      ultimaDesconexion = 0;
+      // Sin timeout mientras haya cliente
+    } else if (huboCliente) {
+      // Hubo cliente; comprobar si pasó la gracia tras desconexión
+      if (ultimaDesconexion == 0) {
+        ultimaDesconexion = millis();
+        Serial.printf("[BLE] Cliente se fue. Esperando %lus por si vuelve…\n",
+                      BLE_GRACIA_DESC_MS / 1000);
+      }
+      if (millis() - ultimaDesconexion > BLE_GRACIA_DESC_MS) {
+        Serial.println("[BLE] Gracia agotada. Usando red guardada.");
+        return false;
+      }
+    } else {
+      // Nunca hubo cliente — timeout normal desde boot
+      if (millis() - inicio > BLE_ESPERA_MS) {
+        Serial.println("[BLE] 60s sin conexión. Usando red guardada.");
+        return false;
+      }
+    }
+
+    delay(100);
+  }
+}
+
+// ════════════════════════════════════════════
+//  SETUP
+// ════════════════════════════════════════════
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  Serial.println("\n[INIT] ═══════════════════════════════");
+  Serial.println("[INIT] Red Meteorológica Chilpancingo");
+  Serial.println("[INIT] ID:        " EST_ID);
+  Serial.println("[INIT] Nombre:    " EST_NOMBRE);
+  Serial.println("[INIT] Firmware:  " EST_FIRMWARE);
+  Serial.printf("[HEAP] Inicial: %u bytes\n", ESP.getFreeHeap());
+  Serial.println("[INIT] ═══════════════════════════════");
+
+  Wire.begin(27, 22);
+  Wire1.begin(32, 33);
+
+  // ── 1) BLE encendido + espera de configuración ──
+  iniciarBLE();
+  bool credsPorBLE = esperarConfiguracionBLE();
+
+  // ── 2) Elegir credenciales ──
+  String ssid, pass;
+  if (credsPorBLE) {
+    ssid = nuevaSSID;
+    pass = nuevaPass;
+    Serial.println("[Config] Usando credenciales recibidas por BLE: " + ssid);
+  } else if (strlen(WIFI_SSID) > 0) {
+    ssid = WIFI_SSID;
+    pass = WIFI_PASS;
+    Serial.println("[Config] Usando credenciales hardcodeadas.");
+  } else {
+    ssid = leerSSID();
+    pass = leerPass();
+    if (!ssid.isEmpty()) Serial.println("[Config] Usando red guardada en flash: " + ssid);
+  }
+
+  // ── 3) Conectar a WiFi ──
+  bool wifiOK = false;
+  if (!ssid.isEmpty()) {
+    wifiOK = conectarWifi(ssid, pass);
+  } else {
+    Serial.println("[WiFi] No hay credenciales. Reinicia y configura por BLE.");
+    publicarEstado("NO_CREDS");
+  }
+
+  // ── 4) Si WiFi OK: guardar, apagar BLE, init Firebase ──
+  if (wifiOK) {
+    if (credsPorBLE) guardarWifi(ssid, pass);
+    delay(800);              // tiempo para que la app reciba WIFI_OK por BLE
+    apagarBLE();             // libera ~50 KB para Firebase/SSL
+
+    configTime(-6*3600, 0, "pool.ntp.org");
+    esperarNTP(10000);
+
+    Serial.printf("[HEAP] Antes de Firebase: %u bytes (mayor: %u)\n",
+                  ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+    initFirebase();
+    delay(300);
+    registrarEnFirebase();
+  } else {
+    Serial.println("[Setup] Conexión WiFi falló. BLE sigue activo.");
+    Serial.println("        Envía credenciales nuevas o reinicia para reintentar.");
+    publicarEstado("WIFI_FAIL");
+    // Permitir que un nuevo envío de credenciales gatille un reinicio
+    credencialesRecibidas = false;
+    nuevaSSID = ""; nuevaPass = "";
+  }
+
+  // ── 5) Sensores ──
+  initOLED();
+  aht.begin(&Wire1);
+  bmp.begin(0x77);
+  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
+                  Adafruit_BMP280::SAMPLING_X2,
+                  Adafruit_BMP280::SAMPLING_X16,
+                  Adafruit_BMP280::FILTER_X16,
+                  Adafruit_BMP280::STANDBY_MS_500);
+  encoder.begin();
+
+  pinMode(PIN_VIENTO, INPUT);
+  pinMode(PIN_LLUVIA, INPUT);
+  attachInterrupt(digitalPinToInterrupt(PIN_VIENTO), isrViento, FALLING);
+  attachInterrupt(digitalPinToInterrupt(PIN_LLUVIA), isrLluvia, FALLING);
+
+  Serial.println("[INIT] Listo.\n");
+  tAnteriorConsola = tAnteriorActual = tAnteriorHist = tAnteriorViento = tAnteriorRegistro = millis();
+}
+
+// ════════════════════════════════════════════
+//  LOOP
+// ════════════════════════════════════════════
+void loop() {
+  unsigned long ahora = millis();
+
+  // ── Si BLE sigue activo (WiFi falló en setup) y llegan nuevas creds ──
+  //    Reiniciamos para aplicar el nuevo flujo completo desde cero.
+  if (bleActivo && credencialesRecibidas) {
+    Serial.println("[BLE] Nuevas credenciales recibidas. Reiniciando…");
+    publicarEstado("REBOOTING");
+    delay(800);
+    ESP.restart();
+  }
+
+  // ── Velocidad viento cada 5s ──
+  if (ahora - tAnteriorViento >= 5000) {
+    noInterrupts(); int pv = contViento; contViento = 0; interrupts();
+    velocidadViento = ((float)pv / (PULSOS_POR_VUELTA * 5.0)) * 2.0 * PI * RADIO_ASPA_M * 3.6;
+    tAnteriorViento = ahora;
+  }
+
+  // ── Lluvia ──
+  noInterrupts(); int pl = contLluvia; contLluvia = 0; interrupts();
+  lluviaAcumulada += (pl * ML_POR_PULSO / AREA_EMBUDO_CM2) * 10.0;
+
+  // ── Sensores ──
+  sensors_event_t humEv, tempEv;
+  aht.getEvent(&humEv, &tempEv);
+  float temp    = tempEv.temperature;
+  float humedad = humEv.relative_humidity;
+
+  float presionRaw = bmp.readPressure();
+  float presion;
+  if (!esValido(presionRaw) || presionRaw <= 0 || presionRaw > 120000) { resetBusI2C(); presion = 0; }
+  else presion = presionRaw / 100.0F;
+
+  float angulo = encoder.readAngle() * AS5600_RAW_TO_DEGREES;
+  String dir   = dirViento(angulo);
+  String ts    = getTimestamp();
+  bool fbOK    = false;
+  bool wifiOK  = (WiFi.status() == WL_CONNECTED);
+
+  mostrarOLED(temp, humedad, presion, velocidadViento, dir, lluviaAcumulada, wifiOK, fbOK);
+
+  // ── Firebase: datos actuales (cada 1.5 s) ──
+  if (ahora - tAnteriorActual >= INTERVALO_ACTUAL_MS) {
+    if (wifiOK && registrado) {
+      bool datosOK = esValido(temp) && esValido(humedad) && esValido(presion)
+                     && presion > 0 && esValido(velocidadViento) && esValido(angulo);
+      if (datosOK) {
+        FirebaseJson json;
+        json.set("timestamp",     ts);
+        json.set("temperatura",   temp);
+        json.set("humedad",       humedad);
+        json.set("presion",       presion);
+        json.set("viento_kmh",    velocidadViento);
+        json.set("viento_dir",    dir);
+        json.set("viento_grados", angulo);
+        json.set("lluvia_mm",     lluviaAcumulada);
+        fbOK = Firebase.setJSON(fbData, PATH_ACTUAL, json);
+        if (!fbOK) Serial.println("[Firebase ERROR] " + fbData.errorReason());
+      }
+    }
+    tAnteriorActual = ahora;
+  }
+
+  // ── Firebase: histórico (cada 10 min) ──
+  if (ahora - tAnteriorHist >= INTERVALO_HIST_MS) {
+    if (wifiOK && registrado && presion > 0) {
+      FirebaseJson jsonHist;
+      jsonHist.set("timestamp",   ts);
+      jsonHist.set("temperatura", temp);
+      jsonHist.set("humedad",     humedad);
+      jsonHist.set("presion",     presion);
+      jsonHist.set("viento_kmh",  velocidadViento);
+      jsonHist.set("viento_dir",  dir);
+      jsonHist.set("lluvia_mm",   lluviaAcumulada);
+      String ruta = String(PATH_HISTORIAL) + ts;
+      if (Firebase.setJSON(fbData, ruta, jsonHist)) lluviaAcumulada = 0.0;
+    }
+    tAnteriorHist = ahora;
+  }
+
+  // ── Re-registro periódico (cada 1h) ──
+  if (ahora - tAnteriorRegistro >= INTERVALO_REGISTRO_MS) {
+    if (wifiOK && registrado) registrarEnFirebase();
+    tAnteriorRegistro = ahora;
+  }
+
+  // ── Consola ──
+  if (ahora - tAnteriorConsola >= INTERVALO_CONSOLA_MS) {
+    Serial.printf("[%s] T:%.1f°C H:%.0f%% P:%.1fhPa V:%.1fkm/h Dir:%s Lluv:%.1fmm WiFi:%s FB:%s\n",
+      EST_ID, temp, humedad, presion, velocidadViento, dir.c_str(), lluviaAcumulada,
+      wifiOK ? "OK" : "NO", fbOK ? "OK" : "NO");
+    tAnteriorConsola = ahora;
+  }
+
+  delay(200);
+}
