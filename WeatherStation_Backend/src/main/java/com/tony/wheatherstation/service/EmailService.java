@@ -41,6 +41,11 @@ public class EmailService {
                 .defaultHeader("api-key", apiKey)
                 .defaultHeader("accept", "application/json")
                 .build();
+        // Diagnóstico de arranque (sin exponer la key): confirma si el envío
+        // quedó habilitado y con qué remitente, visible en los logs tras el deploy.
+        log.info("EmailService: envío de correo {} (remitente='{}', api-key {} caracteres)",
+                habilitado ? "HABILITADO" : "DESHABILITADO", from,
+                apiKey == null ? 0 : apiKey.length());
     }
 
     public void enviarToken(String to, String stationName, String token) {
