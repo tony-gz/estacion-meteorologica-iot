@@ -13,11 +13,12 @@ import java.util.Map;
 /**
  * Notificaciones por email para solicitudes de token de estación.
  *
- * <p>Usa la API HTTP de Brevo (transaccional) en lugar de SMTP, porque el plan
- * free de Render bloquea los puertos SMTP salientes (25/465/587). El remitente
- * ({@code app.solicitudes.email-from}) debe estar verificado en Brevo. Si no hay
- * API key configurada, el envío queda deshabilitado (se registra un aviso) sin
- * afectar a la operación principal (aprobar/rechazar).
+ * <p>Usa la API HTTP de SendGrid (transaccional) en lugar de SMTP, porque el
+ * plan free de Render bloquea los puertos SMTP salientes (25/465/587). El
+ * remitente ({@code app.solicitudes.email-from}) debe estar verificado en
+ * SendGrid (Single Sender Verification). Si no hay API key configurada, el envío
+ * queda deshabilitado (se registra un aviso) sin afectar a la operación
+ * principal (aprobar/rechazar).
  */
 @Slf4j
 @Service
@@ -31,15 +32,14 @@ public class EmailService {
     public EmailService(
             @Value("${app.solicitudes.email-from}") String from,
             @Value("${app.email.from-name:CLIMBOT}") String fromName,
-            @Value("${app.email.brevo-api-key:}") String apiKey,
-            @Value("${app.email.brevo-base-url:https://api.brevo.com}") String baseUrl) {
+            @Value("${app.email.sendgrid-api-key:}") String apiKey,
+            @Value("${app.email.sendgrid-base-url:https://api.sendgrid.com}") String baseUrl) {
         this.from = from;
         this.fromName = fromName;
         this.habilitado = apiKey != null && !apiKey.isBlank();
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
-                .defaultHeader("api-key", apiKey)
-                .defaultHeader("accept", "application/json")
+                .defaultHeader("Authorization", "Bearer " + apiKey)
                 .build();
         // Diagnóstico de arranque (sin exponer la key): confirma si el envío
         // quedó habilitado y con qué remitente, visible en los logs tras el deploy.
@@ -88,17 +88,17 @@ public class EmailService {
 
     private void enviar(String to, String asunto, String cuerpo) {
         if (!habilitado) {
-            log.warn("Email NO enviado a {} (falta BREVO_API_KEY). Asunto: {}", to, asunto);
+            log.warn("Email NO enviado a {} (falta SENDGRID_API_KEY). Asunto: {}", to, asunto);
             return;
         }
         try {
             Map<String, Object> body = Map.of(
-                    "sender", Map.of("name", fromName, "email", from),
-                    "to", List.of(Map.of("email", to)),
+                    "personalizations", List.of(Map.of("to", List.of(Map.of("email", to)))),
+                    "from", Map.of("email", from, "name", fromName),
                     "subject", asunto,
-                    "textContent", cuerpo);
+                    "content", List.of(Map.of("type", "text/plain", "value", cuerpo)));
             restClient.post()
-                    .uri("/v3/smtp/email")
+                    .uri("/v3/mail/send")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
@@ -106,7 +106,7 @@ public class EmailService {
             log.info("Email enviado a {}: {}", to, asunto);
         } catch (RestClientResponseException e) {
             // La API respondió con error (p. ej. remitente no verificado, key inválida).
-            log.error("Brevo rechazó el email a {} ({}): {}", to, e.getStatusCode(),
+            log.error("SendGrid rechazó el email a {} ({}): {}", to, e.getStatusCode(),
                     e.getResponseBodyAsString());
         } catch (Exception e) {
             // Fallo de red u otro: el email es un efecto secundario, no rompemos la

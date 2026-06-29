@@ -97,8 +97,8 @@ app:
     # Remitente de los correos. DEBE ser un remitente verificado en Brevo.
     email-from: ${SOLICITUDES_EMAIL_FROM:noreply@climbot.app}
   email:
-    # Envío por la API HTTP de Brevo (SMTP no funciona en Render free).
+    # Envío por la API HTTP de SendGrid (SMTP no funciona en Render free).
     # Sin API key, el envío queda deshabilitado (solo se registra un aviso).
-    brevo-api-key: ${BREVO_API_KEY:}
-    brevo-base-url: ${BREVO_BASE_URL:https://api.brevo.com}
+    sendgrid-api-key: ${SENDGRID_API_KEY:}
+    sendgrid-base-url: ${SENDGRID_BASE_URL:https://api.sendgrid.com}
     from-name: ${EMAIL_FROM_NAME:CLIMBOT}

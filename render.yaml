@@ -44,9 +44,9 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         sync: false
 
-      # Email transaccional (Brevo, API HTTP — SMTP no funciona en Render free)
-      - key: BREVO_API_KEY
+      # Email transaccional (SendGrid, API HTTP — SMTP no funciona en Render free)
+      - key: SENDGRID_API_KEY
         sync: false
-      # Remitente: DEBE estar verificado en Brevo (Senders).
+      # Remitente: DEBE estar verificado en SendGrid (Single Sender Verification).
       - key: SOLICITUDES_EMAIL_FROM
         sync: false
