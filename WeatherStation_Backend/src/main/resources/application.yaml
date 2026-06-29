@@ -55,6 +55,12 @@ management:
     web:
       exposure:
         include: health,info
+  health:
+    # El SMTP saliente suele estar bloqueado en el hosting; su disponibilidad NO
+    # debe condicionar el liveness. Sin esto, /actuator/health devuelve 503 y el
+    # despliegue queda en "Timed Out". La salud de la BD sí se mantiene activa.
+    mail:
+      enabled: false
 
 # Propiedades propias de la aplicación
 app:
