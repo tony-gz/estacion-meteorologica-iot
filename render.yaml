@@ -1,5 +1,5 @@
 # Blueprint de Render para el WeatherStation Backend.
-# Despliega un servicio web (Docker) + PostgreSQL gestionado.
+# Despliega un servicio web (Docker). La base de datos es Neon PostgreSQL externa.
 # Los secretos marcados con sync:false se introducen en el dashboard de Render.
 services:
   - type: web
@@ -13,19 +13,14 @@ services:
       - key: SPRING_PROFILES_ACTIVE
         value: prod
 
-      # Base de datos (PostgreSQL gestionado por Render, definida abajo).
-      # Pega aquí la "Internal Database URL" en formato JDBC:
-      #   jdbc:postgresql://HOST:PORT/DB   (sin usuario/contraseña)
+      # Base de datos (Neon PostgreSQL externa).
+      # Obtén estos datos desde neon.tech → project → Connection Details.
       - key: SPRING_DATASOURCE_URL
         sync: false
       - key: SPRING_DATASOURCE_USERNAME
-        fromDatabase:
-          name: weatherstation-db
-          property: user
+        sync: false
       - key: SPRING_DATASOURCE_PASSWORD
-        fromDatabase:
-          name: weatherstation-db
-          property: password
+        sync: false
 
       # Seguridad (usuarios)
       - key: JWT_SECRET
@@ -48,7 +43,3 @@ services:
       # CORS: orígenes de las apps cliente (Flutter/Web), separados por coma
       - key: CORS_ALLOWED_ORIGINS
         sync: false
-
-databases:
-  - name: weatherstation-db
-    plan: free
