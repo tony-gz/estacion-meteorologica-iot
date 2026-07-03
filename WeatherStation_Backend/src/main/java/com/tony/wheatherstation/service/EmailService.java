@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Notificaciones por email para solicitudes de token de estación.
@@ -48,26 +49,27 @@ public class EmailService {
                 apiKey == null ? 0 : apiKey.length());
     }
 
-    public void enviarToken(String to, String stationName, String token) {
+    public void enviarToken(String to, String stationName, UUID stationUuid, String token) {
         String asunto = "CLIMBOT — Token de estación \"" + stationName + "\" aprobado";
         String cuerpo = """
                 ¡Hola!
 
                 Tu solicitud para la estación "%s" ha sido aprobada.
 
-                Token de acceso: %s
+                Datos de la estación:
+                  UUID (identificador único): %s
+                  Token de acceso:             %s
 
-                Instrucciones:
-                1. Copia el token (sin espacios).
-                2. Pégalo en la configuración de tu ESP32 (variable TOKEN en el firmware).
-                3. Asegúrate de que el UUID de la estación también esté configurado.
-                4. La estación comenzará a enviar datos automáticamente.
+                Instrucciones para configurar tu ESP32:
+                1. Copia el UUID y pégalo en EST_UUID del firmware.
+                2. Copia el token (sin espacios) y pégalo en EST_TOKEN.
+                3. La estación comenzará a enviar datos automáticamente.
 
-                Este token se muestra solo una vez. Si lo pierdes, un administrador puede
-                regenerarlo desde el panel de control.
+                ⚠  Este token se muestra solo una vez. Si lo pierdes, un administrador
+                   puede regenerarlo desde el panel de control.
 
                 — CLIMBOT
-                """.formatted(stationName, token);
+                """.formatted(stationName, stationUuid, token);
         enviar(to, asunto, cuerpo);
     }
 

@@ -192,6 +192,7 @@ public class SolicitudService {
             emailService.enviarToken(
                     solicitud.getSolicitante().getEmail(),
                     estacion.getNombre(),
+                    estacion.getUuid(),
                     token);
         }
 

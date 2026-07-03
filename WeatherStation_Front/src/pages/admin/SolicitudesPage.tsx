@@ -77,14 +77,25 @@ export function SolicitudesPage() {
       </div>
 
       {token && (
-        <Modal abierto onCerrar={() => setToken(null)} titulo="Token de la estación creada">
+        <Modal abierto onCerrar={() => setToken(null)} titulo="Estación creada — Token y UUID">
           <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900">
             ⚠ {token.aviso}
           </p>
-          <code className="block break-all text-xs bg-slate-100 dark:bg-slate-700 rounded-md p-3 font-mono">{token.token}</code>
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs font-medium text-slate-500 mb-1 dark:text-slate-400">UUID de la estación</p>
+              <code className="block break-all text-xs bg-slate-100 dark:bg-slate-700 rounded-md p-3 font-mono">{token.uuid}</code>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500 mb-1 dark:text-slate-400">Token de acceso</p>
+              <code className="block break-all text-xs bg-slate-100 dark:bg-slate-700 rounded-md p-3 font-mono">{token.token}</code>
+            </div>
+          </div>
           <div className="flex justify-end gap-2 pt-3">
             <button className="px-4 py-2 text-sm rounded-md border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300"
-                    onClick={() => navigator.clipboard?.writeText(token.token)}>Copiar</button>
+                    onClick={() => navigator.clipboard?.writeText(token.uuid)}>Copiar UUID</button>
+            <button className="px-4 py-2 text-sm rounded-md border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300"
+                    onClick={() => navigator.clipboard?.writeText(token.token)}>Copiar Token</button>
             <button className="px-4 py-2 text-sm rounded-md bg-sky-600 text-white" onClick={() => setToken(null)}>Cerrar</button>
           </div>
         </Modal>
