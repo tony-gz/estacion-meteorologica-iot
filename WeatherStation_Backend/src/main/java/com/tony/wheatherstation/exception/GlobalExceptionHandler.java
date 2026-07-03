@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -70,6 +71,14 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST.getReasonPhrase(),
                 "VALIDACION", "Datos de entrada inválidos", req.getRequestURI(), fieldErrors);
         return ResponseEntity.badRequest().body(body);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> handleHttpMessageNotReadable(HttpMessageNotReadableException ex,
+                                                                  HttpServletRequest req) {
+        log.warn("Error de parseo JSON en {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, "JSON_INVALIDO",
+                "El cuerpo de la solicitud contiene datos inválidos", req);
     }
 
     @ExceptionHandler(AuthenticationException.class)
