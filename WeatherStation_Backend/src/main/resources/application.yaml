@@ -10,6 +10,10 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/weatherstation}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    hikari:
+      max-lifetime: 600000      # 10 min (menor que idle timeout de PG)
+      connection-timeout: 10000 # 10 seg
+      idle-timeout: 300000      # 5 min
 
   jpa:
     open-in-view: false
