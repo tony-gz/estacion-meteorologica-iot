@@ -139,7 +139,7 @@ void guardarWifi(const String& ssid, const String& pass) {
 // ════════════════════════════════════════════
 String getTimestamp() {
   time_t now = time(nullptr);
-  struct tm* t = localtime(&now);
+    struct tm* t = gmtime(&now);
   if (t == nullptr) return String("1970-01-01T00:00:00");
   char buf[25];
   snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
@@ -467,31 +467,41 @@ void setup() {
   Serial.println("[INIT] UUID:     " EST_UUID);
   Serial.println("[INIT] Firmware: " EST_FIRMWARE);
 
+  Serial.println("[DEBUG] 1 — Wire.begin...");
   Wire.begin(27, 22);
+  Serial.println("[DEBUG] 2 — Wire1.begin...");
   Wire1.begin(32, 33);
 
   // 1) BLE + espera de configuración WiFi
-  iniciarBLE();
+  Serial.println("[DEBUG] 3 — iniciarBLE...");
+  Serial.println("[DEBUG] 4 — esperarConfiguracionBLE...");
   bool credsPorBLE = esperarConfiguracionBLE();
 
   // 2) Elegir credenciales WiFi
+  Serial.println("[DEBUG] 5 — elegir credenciales...");
   String ssid, pass;
   if (credsPorBLE) { ssid = nuevaSSID; pass = nuevaPass; }
   else if (strlen(WIFI_SSID) > 0) { ssid = WIFI_SSID; pass = WIFI_PASS; }
   else { ssid = leerSSID(); pass = leerPass(); }
 
   // 3) Conectar a WiFi
+  Serial.println("[DEBUG] 6 — conectarWifi...");
   bool wifiOK = false;
   if (!ssid.isEmpty()) wifiOK = conectarWifi(ssid, pass);
   else { Serial.println("[WiFi] No hay credenciales. Configura por BLE."); publicarEstado("NO_CREDS"); }
 
   // 4) Si WiFi OK: guardar, apagar BLE, NTP, handshake con el backend
+  Serial.println("[DEBUG] 7 — post-WiFi...");
   if (wifiOK) {
     if (credsPorBLE) guardarWifi(ssid, pass);
     delay(800);
+    Serial.println("[DEBUG] 8 — apagarBLE...");
     apagarBLE();
+    Serial.println("[DEBUG] 9 — configTime...");
     configTime(-6*3600, 0, "pool.ntp.org");
+    Serial.println("[DEBUG] 10 — esperarNTP...");
     esperarNTP(10000);
+    Serial.println("[DEBUG] 11 — obtenerDeviceToken...");
     obtenerDeviceToken();   // primer handshake (si falla, se reintenta al enviar)
   } else {
     Serial.println("[Setup] WiFi falló. BLE sigue activo.");
@@ -500,13 +510,16 @@ void setup() {
   }
 
   // 5) Sensores (SIN CAMBIOS)
+  Serial.println("[DEBUG] 12 — initOLED...");
   initOLED();
+  Serial.println("[DEBUG] 13 — sensores I2C...");
   aht.begin(&Wire1);
   bmp.begin(0x77);
   bmp.setSampling(Adafruit_BMP280::MODE_NORMAL, Adafruit_BMP280::SAMPLING_X2,
                   Adafruit_BMP280::SAMPLING_X16, Adafruit_BMP280::FILTER_X16,
                   Adafruit_BMP280::STANDBY_MS_500);
   encoder.begin();
+  Serial.println("[DEBUG] 14 — pines e IRQ...");
   pinMode(PIN_VIENTO, INPUT);
   pinMode(PIN_LLUVIA, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIN_VIENTO), isrViento, FALLING);
