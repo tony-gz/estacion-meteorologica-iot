@@ -24,7 +24,15 @@ const config: ExpoConfig = {
   plugins: [
     'expo-asset',
     'expo-secure-store',
-    // react-native-ble-plx se añade en US3 (config plugin) junto con su dependencia.
+    [
+      'react-native-ble-plx',
+      {
+        isBackgroundEnabled: false,
+        // neverForLocation: en Android 12+ declara que el BLE no se usa para ubicar,
+        // evitando pedir ACCESS_FINE_LOCATION en dispositivos modernos (Android 13).
+        neverForLocation: true,
+      },
+    ],
   ],
   extra: {
     apiUrl: API_URL,

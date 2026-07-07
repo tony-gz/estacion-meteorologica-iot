@@ -4,6 +4,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useEstaciones } from '../lib/queries';
 import { mensajeError } from '../lib/api';
+import { useAuth } from '../auth/AuthContext';
 import { usarTema } from '../theme/theme';
 import { fmtFechaHora } from '../lib/format';
 import { EstadoBadge } from '../components/EstadoBadge';
@@ -15,6 +16,8 @@ import type { RootNav } from '../navigation/types';
 export function EstacionesScreen() {
   const t = usarTema(useColorScheme());
   const navigation = useNavigation<RootNav>();
+  const { tieneRol } = useAuth();
+  const puedeConfigurar = tieneRol('RESPONSABLE', 'ADMIN');
   const { data, isPending, isError, error, refetch, isRefetching } = useEstaciones();
 
   if (isPending) return <Loading mensaje="Cargando estaciones…" />;
@@ -27,6 +30,17 @@ export function EstacionesScreen() {
       data={data}
       keyExtractor={(e) => e.id}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={t.primario} />}
+      ListHeaderComponent={
+        puedeConfigurar ? (
+          <Pressable
+            onPress={() => navigation.navigate('ConfigWifiBLE')}
+            style={[styles.bleBtn, { borderColor: t.primario }]}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.bleTexto, { color: t.primario }]}>📶 Configurar WiFi de una estación (BLE)</Text>
+          </Pressable>
+        ) : null
+      }
       ListEmptyComponent={<Text style={[styles.vacio, { color: t.textoTenue }]}>No hay estaciones.</Text>}
       renderItem={({ item }) => (
         <Pressable
@@ -53,6 +67,8 @@ export function EstacionesScreen() {
 const styles = StyleSheet.create({
   lista: { padding: 16, gap: 12 },
   vacio: { textAlign: 'center', marginTop: 40 },
+  bleBtn: { borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 12, padding: 14, alignItems: 'center' },
+  bleTexto: { fontSize: 14, fontWeight: '700' },
   card: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 4 },
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   nombre: { fontSize: 16, fontWeight: '700', flex: 1 },

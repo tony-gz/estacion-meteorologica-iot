@@ -34,7 +34,7 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 - [X] T001 Inicializar app Expo (TypeScript) en `WeatherStation_MOVIL/` con `expo-dev-client` (`npx create-expo-app`), fijando SDK 52+.
 - [X] T002 Añadir dependencias base en `WeatherStation_MOVIL/package.json`: `@tanstack/react-query`, `axios`, `expo-secure-store`, `expo-constants`, `@react-navigation/native` + `@react-navigation/native-stack` + `@react-navigation/bottom-tabs` (+ `react-native-screens`, `react-native-safe-area-context`).
-- [ ] T003 [P] Añadir dependencias BLE y permisos: `react-native-ble-plx` (+ su config plugin) y utilidades de permisos en `WeatherStation_MOVIL/package.json`.
+- [X] T003 [P] Añadir dependencias BLE y permisos: `react-native-ble-plx` (+ su config plugin) y utilidades de permisos en `WeatherStation_MOVIL/package.json`.
 - [X] T004 [P] Añadir librería de gráficas RN (`react-native-gifted-charts` o `victory-native`) en `WeatherStation_MOVIL/package.json`.
 - [X] T005 Configurar `WeatherStation_MOVIL/app.config.ts`: nombre/slug/paquete, plugin de `react-native-ble-plx`, permisos Android (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `ACCESS_FINE_LOCATION`) y `API_URL` vía `expo-constants`/env.
 - [X] T006 [P] Crear `WeatherStation_MOVIL/eas.json` con perfiles `development` (dev client), `preview` y `production`.
@@ -104,13 +104,13 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 **Independent Test**: con un ESP32 encendido anunciando `Meteo-{uuid}`, escanear → seleccionar → enviar SSID+PASS → ver `WIFI_OK:{ip}`.
 
-- [ ] T031 [US3] Gestión de permisos BLE en `WeatherStation_MOVIL/src/ble/permissions.ts`: solicitar `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` (API 31+) y `ACCESS_FINE_LOCATION` (≤30); guiar a ajustes si se deniegan (FR-018).
-- [ ] T032 [US3] `WeatherStation_MOVIL/src/ble/bleManager.ts`: inicializar `react-native-ble-plx`, escanear y **filtrar por prefijo `Meteo-`**, detectar BLE apagado/no soportado.
-- [ ] T033 [US3] `WeatherStation_MOVIL/src/ble/provisioning.ts`: conectar GATT al servicio `4fafc201-…`, escribir SSID (`…b26a8`) y PASS (`…b26a9`), escribir CMD `APPLY` (`…b26ab`), suscribir notify de STATUS (`…b26aa`) — según `contracts/ble-gatt.md`.
-- [ ] T034 [US3] Parser de estados STATUS en `provisioning.ts` (`SSID_OK`, `PASS_OK`, `CONNECTING:{ssid}`, `WIFI_OK:{ip}`, `NO_AP`, `BAD_PASSWORD`, `WIFI_FAIL`, `ERR_NO_SSID`) con máquina de estados y **timeout** (~30 s).
-- [ ] T035 [US3] Pantalla `WeatherStation_MOVIL/src/screens/ConfigWifiBLEScreen.tsx`: lista de dispositivos descubiertos, formulario SSID/PASS, progreso y resultado terminal (FR-015–FR-017).
-- [ ] T036 [US3] Garantizar que SSID/PASS **no** se loguean ni se envían a la API (FR-019) y que al salir se desconecta el periférico y se descartan de memoria.
-- [ ] T037 [P] [US3] (Opcional) Test unit del parser de STATUS en `WeatherStation_MOVIL/__tests__/ble-status.test.ts`.
+- [X] T031 [US3] Gestión de permisos BLE en `WeatherStation_MOVIL/src/ble/permissions.ts`: solicitar `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` (API 31+) y `ACCESS_FINE_LOCATION` (≤30); guiar a ajustes si se deniegan (FR-018).
+- [X] T032 [US3] `WeatherStation_MOVIL/src/ble/bleManager.ts`: inicializar `react-native-ble-plx`, escanear y **filtrar por prefijo `Meteo-`**, detectar BLE apagado/no soportado.
+- [X] T033 [US3] `WeatherStation_MOVIL/src/ble/provisioning.ts`: conectar GATT al servicio `4fafc201-…`, escribir SSID (`…b26a8`) y PASS (`…b26a9`), escribir CMD `APPLY` (`…b26ab`), suscribir notify de STATUS (`…b26aa`) — según `contracts/ble-gatt.md`.
+- [X] T034 [US3] Parser de estados STATUS en `provisioning.ts` (`SSID_OK`, `PASS_OK`, `CONNECTING:{ssid}`, `WIFI_OK:{ip}`, `NO_AP`, `BAD_PASSWORD`, `WIFI_FAIL`, `ERR_NO_SSID`) con máquina de estados y **timeout** (~30 s).
+- [X] T035 [US3] Pantalla `WeatherStation_MOVIL/src/screens/ConfigWifiBLEScreen.tsx`: lista de dispositivos descubiertos, formulario SSID/PASS, progreso y resultado terminal (FR-015–FR-017).
+- [X] T036 [US3] Garantizar que SSID/PASS **no** se loguean ni se envían a la API (FR-019) y que al salir se desconecta el periférico y se descartan de memoria.
+- [X] T037 [P] [US3] (Opcional) Test unit del parser de STATUS en `WeatherStation_MOVIL/__tests__/ble-status.test.ts`.
 
 **Checkpoint**: US3 entregable (requiere hardware ESP32 real para el test end-to-end).
 

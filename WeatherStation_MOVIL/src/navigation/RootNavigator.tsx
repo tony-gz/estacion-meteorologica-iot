@@ -8,6 +8,7 @@ import { Tabs } from './Tabs';
 import { LoginScreen } from '../screens/LoginScreen';
 import { EstacionDetalleScreen } from '../screens/EstacionDetalleScreen';
 import { GraficasScreen } from '../screens/GraficasScreen';
+import { ConfigWifiBLEScreen } from '../ble/ConfigWifiBLEScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -47,6 +48,11 @@ export function RootNavigator() {
           name="Graficas"
           component={GraficasScreen}
           options={{ title: 'Histórico' }}
+        />
+        <Stack.Screen
+          name="ConfigWifiBLE"
+          component={ConfigWifiBLEScreen}
+          options={{ title: 'Configurar WiFi (BLE)' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
