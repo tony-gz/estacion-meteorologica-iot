@@ -6,11 +6,28 @@ import { BleManager, State, type Device } from 'react-native-ble-plx';
 export const PREFIJO_METEO = 'Meteo-';
 
 let manager: BleManager | null = null;
+let soportado: boolean | null = null;
 
 /** Instancia única del BleManager (perezosa: solo se crea al usar BLE). */
 export function getManager(): BleManager {
   if (!manager) manager = new BleManager();
   return manager;
+}
+
+/**
+ * ¿Está disponible el módulo nativo de BLE? En Expo Go no existe (requiere un
+ * development build), por lo que instanciar el BleManager lanza. Lo detectamos
+ * una vez para mostrar un aviso en vez de crashear.
+ */
+export function bleDisponible(): boolean {
+  if (soportado !== null) return soportado;
+  try {
+    getManager();
+    soportado = true;
+  } catch {
+    soportado = false;
+  }
+  return soportado;
 }
 
 /** Estado del adaptador Bluetooth (PoweredOn, PoweredOff, Unsupported, …). */

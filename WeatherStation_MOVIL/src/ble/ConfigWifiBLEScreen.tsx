@@ -6,7 +6,7 @@ import {
 import type { Device } from 'react-native-ble-plx';
 import { usarTema } from '../theme/theme';
 import { solicitarPermisosBLE, abrirAjustes } from './permissions';
-import { escanearMeteo, estadoBluetooth, State } from './bleManager';
+import { bleDisponible, escanearMeteo, estadoBluetooth, State } from './bleManager';
 import { provisionar, desconectar } from './provisioning';
 import type { EstadoBLE } from './status';
 
@@ -16,6 +16,7 @@ const DURACION_ESCANEO_MS = 15_000;
 export function ConfigWifiBLEScreen() {
   const t = usarTema(useColorScheme());
 
+  const [soportado, setSoportado] = useState(true);
   const [permisoOk, setPermisoOk] = useState<boolean | null>(null);
   const [denegadoPerm, setDenegadoPerm] = useState(false);
   const [btApagado, setBtApagado] = useState(false);
@@ -39,6 +40,10 @@ export function ConfigWifiBLEScreen() {
   const iniciar = useCallback(async () => {
     setErrorMsg(null);
     setDispositivos([]);
+    if (!bleDisponible()) {
+      setSoportado(false);
+      return;
+    }
     const p = await solicitarPermisosBLE();
     setPermisoOk(p.concedidos);
     setDenegadoPerm(p.denegadoPermanente);
@@ -95,6 +100,18 @@ export function ConfigWifiBLEScreen() {
   }
 
   // ── Estados de bloqueo ────────────────────────────────────────────────────
+  if (!soportado) {
+    return (
+      <Aviso
+        t={t}
+        emoji="🧩"
+        titulo="Bluetooth no disponible aquí"
+        texto="La configuración por BLE requiere el build nativo de la app (no funciona en Expo Go). Compílala con «npm run android» e instálala por cable."
+        accion="Reintentar"
+        onAccion={iniciar}
+      />
+    );
+  }
   if (permisoOk === false) {
     return (
       <Aviso

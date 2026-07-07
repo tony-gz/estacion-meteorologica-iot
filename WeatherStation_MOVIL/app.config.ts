@@ -25,6 +25,16 @@ const config: ExpoConfig = {
     'expo-asset',
     'expo-secure-store',
     [
+      // Fija la versión de Kotlin: Compose Compiler 1.5.15 (expo-modules-core)
+      // exige Kotlin 1.9.25; el default de SDK 52 (1.9.24) rompe el build nativo.
+      'expo-build-properties',
+      {
+        android: {
+          kotlinVersion: '1.9.25',
+        },
+      },
+    ],
+    [
       'react-native-ble-plx',
       {
         isBackgroundEnabled: false,
