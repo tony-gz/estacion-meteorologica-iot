@@ -38,7 +38,7 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 - [X] T004 [P] Añadir librería de gráficas RN (`react-native-gifted-charts` o `victory-native`) en `WeatherStation_MOVIL/package.json`.
 - [X] T005 Configurar `WeatherStation_MOVIL/app.config.ts`: nombre/slug/paquete, plugin de `react-native-ble-plx`, permisos Android (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `ACCESS_FINE_LOCATION`) y `API_URL` vía `expo-constants`/env.
 - [X] T006 [P] Crear `WeatherStation_MOVIL/eas.json` con perfiles `development` (dev client), `preview` y `production`.
-- [ ] T007 [P] Configurar linting/format (oxlint o eslint + prettier) y `tsconfig.json` en `WeatherStation_MOVIL/`.
+- [X] T007 [P] Configurar linting/format (oxlint o eslint + prettier) y `tsconfig.json` en `WeatherStation_MOVIL/`.
 - [X] T008 [P] Añadir script de verificación "sin Firebase" (SC-006) al `package.json` (grep de `firebase` que falle si aparece).
 
 **Checkpoint**: `npx expo start --dev-client` levanta la app vacía en un development build.
@@ -72,7 +72,7 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 - [X] T018 [US1] Pantalla pública `WeatherStation_MOVIL/src/screens/PublicoScreen.tsx`: lista de estaciones aprobadas con `SensorCard` (temp, humedad, presión, viento, lluvia).
 - [X] T019 [US1] Estado de carga/error con reintento en la vista pública (FR-020) y mensaje claro sin red.
 - [X] T020 [US1] Gating: los accesos a IA/históricos desde la vista pública redirigen a login (FR-006).
-- [ ] T021 [P] [US1] (Opcional) `GET /api/public/statistics` para un resumen agregado en la vista pública.
+- [X] T021 [P] [US1] (Opcional) `GET /api/public/statistics` para un resumen agregado en la vista pública.
 
 **Checkpoint**: US1 entregable y demostrable de forma independiente (MVP).
 
@@ -122,9 +122,9 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 **Independent Test**: como RESPONSABLE, enviar solicitud de alta (queda pendiente) y ver estado + última conexión de una estación propia.
 
-- [ ] T038 [P] [US4] Hooks en `queries.ts`: solicitar alta (`POST /solicitudes` o `POST /estaciones` según openapi), `GET /solicitudes/mis-solicitudes`, `GET /estaciones/{id}/conexiones`.
-- [ ] T039 [US4] Pantalla `WeatherStation_MOVIL/src/screens/SolicitarEstacionScreen.tsx` (formulario de solicitud, solo rol RESPONSABLE/ADMIN — FR-013).
-- [ ] T040 [US4] En `EstacionDetalleScreen.tsx`, sección de estado (APPROVED/MAINTENANCE/DISABLED) y última conexión para estaciones de la escuela del responsable (FR-014).
+- [X] T038 [P] [US4] Hooks en `queries.ts`: solicitar alta (`POST /solicitudes` o `POST /estaciones` según openapi), `GET /solicitudes/mis-solicitudes`, `GET /estaciones/{id}/conexiones`.
+- [X] T039 [US4] Pantalla `WeatherStation_MOVIL/src/screens/SolicitarEstacionScreen.tsx` (formulario de solicitud, solo rol RESPONSABLE/ADMIN — FR-013).
+- [X] T040 [US4] En `EstacionDetalleScreen.tsx`, sección de estado (APPROVED/MAINTENANCE/DISABLED) y última conexión para estaciones de la escuela del responsable (FR-014).
 
 **Checkpoint**: US4 entregable; ciclo de vida básico cubierto desde el móvil.
 
@@ -132,12 +132,12 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T041 [P] Tema/estilos consistentes (claro/oscuro) en `WeatherStation_MOVIL/src/theme/` reutilizando la identidad del Front.
-- [ ] T042 [P] Manejo global de errores de API legible (mapear 401/403/500) y `mensajeError` compartido.
-- [ ] T043 [P] Test unit de `tokens.ts` (SecureStore mock) en `WeatherStation_MOVIL/__tests__/tokens.test.ts`.
-- [ ] T044 Ejecutar `quickstart.md` V1–V4 y registrar resultados (incluye V3 con ESP32 real y V4 "sin Firebase").
-- [ ] T045 [P] Generar build `preview` con EAS y probar en dispositivo físico Android.
-- [ ] T046 Archivar/limpiar `WeatherStation_MOVIL_Flutter/` (README que indique que quedó como referencia) y actualizar `PROGRESO.md`.
+- [X] T041 [P] Tema/estilos consistentes (claro/oscuro) en `WeatherStation_MOVIL/src/theme/` reutilizando la identidad del Front.
+- [X] T042 [P] Manejo global de errores de API legible (mapear 401/403/500) y `mensajeError` compartido.
+- [X] T043 [P] Test unit de `tokens.ts` (SecureStore mock) en `WeatherStation_MOVIL/__tests__/tokens.test.ts`.
+- [ ] T044 Ejecutar `quickstart.md` V1–V4 y registrar resultados. **Automatizable ya hecho**: V4 "sin Firebase" ✅, typecheck ✅, bundle ✅, tests 9/9 ✅. **Pendiente (requiere entorno del usuario)**: V1/V2 contra el backend en marcha y V3 con ESP32 real.
+- [ ] T045 [P] Generar build `preview` con EAS y probar en dispositivo físico Android. **Pendiente**: requiere cuenta EAS / compilación local por cable del usuario (`npm run android`).
+- [X] T046 Archivar/limpiar `WeatherStation_MOVIL_Flutter/` (README que indique que quedó como referencia) y actualizar `PROGRESO.md`.
 
 ---
 

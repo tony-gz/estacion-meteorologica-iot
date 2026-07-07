@@ -3,7 +3,7 @@ import {
   FlatList, Pressable, RefreshControl, StyleSheet, Text, View, useColorScheme,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { usePublicEstaciones } from '../lib/queries';
+import { usePublicEstaciones, usePublicEstadisticas } from '../lib/queries';
 import { mensajeError } from '../lib/api';
 import { useAuth } from '../auth/AuthContext';
 import { usarTema } from '../theme/theme';
@@ -21,6 +21,7 @@ export function PublicoScreen() {
   const navigation = useNavigation<RootNav>();
   const { autenticado } = useAuth();
   const { data, isPending, isError, error, refetch, isRefetching } = usePublicEstaciones();
+  const stats = usePublicEstadisticas();
 
   // Gate (FR-006): funciones reservadas piden iniciar sesión.
   const irAFuncionPrivada = useCallback(() => {
@@ -40,6 +41,11 @@ export function PublicoScreen() {
       ListHeaderComponent={
         <View style={styles.encabezado}>
           <Text style={[styles.titulo, { color: t.texto }]}>Clima actual</Text>
+          {stats.data && (
+            <Text style={[styles.resumen, { color: t.textoTenue }]}>
+              Red: {stats.data.estaciones} estaciones · temp. media {fmtNum(stats.data.temperatura?.promedio)}°C · hum. {fmtNum(stats.data.humedad?.promedio, 0)}%
+            </Text>
+          )}
           {!autenticado && (
             <Pressable onPress={irAFuncionPrivada} accessibilityRole="button">
               <Text style={[styles.enlace, { color: t.primario }]}>Iniciar sesión para IA e históricos →</Text>
@@ -95,6 +101,7 @@ const styles = StyleSheet.create({
   lista: { padding: 16, gap: 14 },
   encabezado: { gap: 4, marginBottom: 2 },
   titulo: { fontSize: 22, fontWeight: '800' },
+  resumen: { fontSize: 13 },
   enlace: { fontSize: 14, fontWeight: '600' },
   vacio: { textAlign: 'center', marginTop: 40 },
   card: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 12 },

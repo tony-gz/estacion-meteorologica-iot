@@ -7,6 +7,7 @@ export type RootStackParamList = {
   EstacionDetalle: { id: string; nombre: string };
   Graficas: { id: string; nombre: string };
   ConfigWifiBLE: undefined;
+  SolicitarEstacion: undefined;
 };
 
 // Tabs inferiores. "Clima" siempre; el resto solo autenticado.

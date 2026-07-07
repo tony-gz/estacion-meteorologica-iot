@@ -29,8 +29,6 @@ export function ConfigWifiBLEScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const stopScan = useRef<null | (() => void)>(null);
-  const selRef = useRef<Device | null>(null);
-  selRef.current = sel;
 
   const detenerEscaneo = useCallback(() => {
     stopScan.current?.();
@@ -64,13 +62,15 @@ export function ConfigWifiBLEScreen() {
     setTimeout(detenerEscaneo, DURACION_ESCANEO_MS);
   }, [detenerEscaneo]);
 
+  // Arranca el escaneo BLE (sistema externo) al montar.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- iniciar() lanza el escaneo BLE (sistema externo) y resetea el estado inicial de la pantalla
     iniciar();
-    return () => {
-      stopScan.current?.();
-      if (selRef.current) desconectar(selRef.current.id); // limpieza (FR-036)
-    };
+    return () => { stopScan.current?.(); };
   }, [iniciar]);
+
+  // Desconecta el dispositivo seleccionado al cambiar de selección o al desmontar (FR-036).
+  useEffect(() => () => { if (sel) desconectar(sel.id); }, [sel]);
 
   async function onEnviar() {
     if (!sel || !ssid.trim() || !password) return;

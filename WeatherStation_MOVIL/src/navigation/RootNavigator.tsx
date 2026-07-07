@@ -9,6 +9,7 @@ import { LoginScreen } from '../screens/LoginScreen';
 import { EstacionDetalleScreen } from '../screens/EstacionDetalleScreen';
 import { GraficasScreen } from '../screens/GraficasScreen';
 import { ConfigWifiBLEScreen } from '../ble/ConfigWifiBLEScreen';
+import { SolicitarEstacionScreen } from '../screens/SolicitarEstacionScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -53,6 +54,11 @@ export function RootNavigator() {
           name="ConfigWifiBLE"
           component={ConfigWifiBLEScreen}
           options={{ title: 'Configurar WiFi (BLE)' }}
+        />
+        <Stack.Screen
+          name="SolicitarEstacion"
+          component={SolicitarEstacionScreen}
+          options={{ title: 'Solicitar estación' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

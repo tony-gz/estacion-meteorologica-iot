@@ -116,6 +116,17 @@ export interface Conexion {
   detalle: string | null;
 }
 
+/** Body de POST /solicitudes (solicitar alta de estación). */
+export interface SolicitarEstacionInput {
+  nombre: string;
+  institucion?: string;
+  ubicacion?: string;
+  municipio?: string;
+  latitud?: number;
+  longitud?: number;
+  firmware?: string;
+}
+
 export interface Agregado {
   min: number;
   max: number;

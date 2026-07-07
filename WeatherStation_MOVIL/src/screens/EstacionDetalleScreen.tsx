@@ -1,8 +1,9 @@
 import {
   Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useColorScheme,
 } from 'react-native';
-import { useEstacion } from '../lib/queries';
+import { useConexiones, useEstacion } from '../lib/queries';
 import { mensajeError } from '../lib/api';
+import { useAuth } from '../auth/AuthContext';
 import { usarTema } from '../theme/theme';
 import { fmtNum, fmtFechaHora } from '../lib/format';
 import { SensorCard } from '../components/SensorCard';
@@ -15,7 +16,10 @@ import type { PantallaProps } from '../navigation/types';
 export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'EstacionDetalle'>) {
   const { id, nombre } = route.params;
   const t = usarTema(useColorScheme());
+  const { tieneRol } = useAuth();
+  const verConexiones = tieneRol('RESPONSABLE', 'ADMIN');
   const { data, isPending, isError, error, refetch, isRefetching } = useEstacion(id);
+  const conexiones = useConexiones(id, verConexiones);
 
   if (isPending) return <Loading mensaje={`Cargando ${nombre}…`} />;
   if (isError) return <ErrorRetry mensaje={mensajeError(error)} onReintentar={refetch} />;
@@ -64,6 +68,26 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
           <Text style={styles.botonTexto}>📈 Ver histórico</Text>
         </Pressable>
       </View>
+
+      {verConexiones && (
+        <View style={styles.conexiones}>
+          <Text style={[styles.seccion, { color: t.texto }]}>Conexiones recientes</Text>
+          {conexiones.isPending ? (
+            <Text style={[styles.meta, { color: t.textoTenue }]}>Cargando…</Text>
+          ) : conexiones.isError ? (
+            <Text style={[styles.meta, { color: t.error }]}>{mensajeError(conexiones.error)}</Text>
+          ) : conexiones.data.length === 0 ? (
+            <Text style={[styles.meta, { color: t.textoTenue }]}>Sin registros de conexión.</Text>
+          ) : (
+            conexiones.data.slice(0, 10).map((c, i) => (
+              <View key={`${c.timestamp}-${i}`} style={[styles.conexion, { borderColor: t.borde }]}>
+                <Text style={[styles.meta, { color: t.texto }]}>{c.evento}{c.ip ? ` · ${c.ip}` : ''}</Text>
+                <Text style={[styles.meta, { color: t.textoTenue }]}>{fmtFechaHora(c.timestamp)}</Text>
+              </View>
+            ))
+          )}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -78,4 +102,7 @@ const styles = StyleSheet.create({
   acciones: { marginTop: 12 },
   boton: { borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  conexiones: { marginTop: 16, gap: 6 },
+  seccion: { fontSize: 17, fontWeight: '700' },
+  conexion: { borderBottomWidth: 1, paddingVertical: 6, flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
 });

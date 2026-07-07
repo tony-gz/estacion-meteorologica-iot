@@ -32,13 +32,22 @@ export function EstacionesScreen() {
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={t.primario} />}
       ListHeaderComponent={
         puedeConfigurar ? (
-          <Pressable
-            onPress={() => navigation.navigate('ConfigWifiBLE')}
-            style={[styles.bleBtn, { borderColor: t.primario }]}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.bleTexto, { color: t.primario }]}>📶 Configurar WiFi de una estación (BLE)</Text>
-          </Pressable>
+          <View style={{ gap: 8 }}>
+            <Pressable
+              onPress={() => navigation.navigate('SolicitarEstacion')}
+              style={[styles.bleBtn, { borderColor: t.primario }]}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.bleTexto, { color: t.primario }]}>➕ Solicitar alta de estación</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => navigation.navigate('ConfigWifiBLE')}
+              style={[styles.bleBtn, { borderColor: t.primario }]}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.bleTexto, { color: t.primario }]}>📶 Configurar WiFi de una estación (BLE)</Text>
+            </Pressable>
+          </View>
         ) : null
       }
       ListEmptyComponent={<Text style={[styles.vacio, { color: t.textoTenue }]}>No hay estaciones.</Text>}

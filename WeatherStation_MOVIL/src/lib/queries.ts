@@ -1,8 +1,8 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import type {
-  Alerta, Estacion, Estadisticas, IaResponse, Lectura,
-  PublicEstacion, PublicEstadistica,
+  Alerta, Conexion, Estacion, Estadisticas, IaResponse, Lectura,
+  PublicEstacion, PublicEstadistica, SolicitarEstacionInput, Solicitud,
 } from './types';
 
 // Rutas verbatim del openapi (spec 001). baseURL = origen del backend.
@@ -104,5 +104,35 @@ export function useResumenIA() {
   return useMutation({
     mutationFn: async (vars: { estacionId: string; horas?: number }) =>
       (await api.post<IaResponse>('/ia/resumen', { horas: 24, ...vars })).data,
+  });
+}
+
+// ── Gestión del responsable (US4) ───────────────────────────────────────────
+
+/** GET /estaciones/{id}/conexiones → historial de conexiones (FR-014). */
+export function useConexiones(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['conexiones', id],
+    enabled,
+    queryFn: async () => (await api.get<Conexion[]>(`/estaciones/${id}/conexiones`)).data,
+  });
+}
+
+/** GET /solicitudes/mis-solicitudes → solicitudes del usuario. */
+export function useMisSolicitudes(enabled = true) {
+  return useQuery({
+    queryKey: ['mis-solicitudes'],
+    enabled,
+    queryFn: async () => (await api.get<Solicitud[]>('/solicitudes/mis-solicitudes')).data,
+  });
+}
+
+/** POST /solicitudes → solicitar alta de estación (FR-013). */
+export function useSolicitarEstacion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: SolicitarEstacionInput) =>
+      (await api.post<Solicitud>('/solicitudes', input)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mis-solicitudes'] }),
   });
 }
