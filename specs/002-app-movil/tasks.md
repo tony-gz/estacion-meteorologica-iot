@@ -35,7 +35,7 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 - [X] T001 Inicializar app Expo (TypeScript) en `WeatherStation_MOVIL/` con `expo-dev-client` (`npx create-expo-app`), fijando SDK 52+.
 - [X] T002 Añadir dependencias base en `WeatherStation_MOVIL/package.json`: `@tanstack/react-query`, `axios`, `expo-secure-store`, `expo-constants`, `@react-navigation/native` + `@react-navigation/native-stack` + `@react-navigation/bottom-tabs` (+ `react-native-screens`, `react-native-safe-area-context`).
 - [ ] T003 [P] Añadir dependencias BLE y permisos: `react-native-ble-plx` (+ su config plugin) y utilidades de permisos en `WeatherStation_MOVIL/package.json`.
-- [ ] T004 [P] Añadir librería de gráficas RN (`react-native-gifted-charts` o `victory-native`) en `WeatherStation_MOVIL/package.json`.
+- [X] T004 [P] Añadir librería de gráficas RN (`react-native-gifted-charts` o `victory-native`) en `WeatherStation_MOVIL/package.json`.
 - [X] T005 Configurar `WeatherStation_MOVIL/app.config.ts`: nombre/slug/paquete, plugin de `react-native-ble-plx`, permisos Android (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `ACCESS_FINE_LOCATION`) y `API_URL` vía `expo-constants`/env.
 - [X] T006 [P] Crear `WeatherStation_MOVIL/eas.json` con perfiles `development` (dev client), `preview` y `production`.
 - [ ] T007 [P] Configurar linting/format (oxlint o eslint + prettier) y `tsconfig.json` en `WeatherStation_MOVIL/`.
@@ -84,15 +84,15 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 **Independent Test**: login → ver histórico en gráfica → preguntar a la IA → refresh transparente al expirar el access → logout limpia SecureStore.
 
-- [ ] T022 [US2] Pantalla `WeatherStation_MOVIL/src/screens/LoginScreen.tsx`: `POST /auth/login`, guarda tokens+usuario en SecureStore vía AuthContext.
-- [ ] T023 [US2] Verificar/ajustar el refresh transparente (`POST /auth/refresh` con rotación) en `api.ts` para RN y probar el caso de refresh inválido → logout (FR-003, FR-021).
-- [ ] T024 [P] [US2] Hooks `useEstaciones`, `useEstacion`, `useHistorial`, `useEstadisticas` en `queries.ts` (`GET /estaciones`, `/estaciones/{id}`, `/estaciones/{id}/historial`, `/estaciones/{id}/estadisticas`).
-- [ ] T025 [US2] Pantalla `WeatherStation_MOVIL/src/screens/EstacionesScreen.tsx` (lista autenticada) y `EstacionDetalleScreen.tsx` (lectura actual + estado).
-- [ ] T026 [US2] Componente `WeatherStation_MOVIL/src/components/Grafica.tsx` con la librería RN (serie temporal, rango seleccionable) y pantalla `GraficasScreen.tsx` (FR-008).
-- [ ] T027 [P] [US2] Hooks de IA en `queries.ts`: `POST /ia/preguntar`, `/ia/resumen`, `/ia/prediccion`.
-- [ ] T028 [US2] Pantalla `WeatherStation_MOVIL/src/screens/AsistenteIAScreen.tsx` (solo autenticado) con input de pregunta y render de respuesta (FR-009).
-- [ ] T029 [P] [US2] Hook `useAlertas` (`GET /alertas`) y visualización con `AlertBanner` (FR-010).
-- [ ] T030 [US2] Botón/acción de logout que limpia SecureStore y vuelve a público (FR-005).
+- [X] T022 [US2] Pantalla `WeatherStation_MOVIL/src/screens/LoginScreen.tsx`: `POST /auth/login`, guarda tokens+usuario en SecureStore vía AuthContext.
+- [X] T023 [US2] Verificar/ajustar el refresh transparente (`POST /auth/refresh` con rotación) en `api.ts` para RN y probar el caso de refresh inválido → logout (FR-003, FR-021).
+- [X] T024 [P] [US2] Hooks `useEstaciones`, `useEstacion`, `useHistorial`, `useEstadisticas` en `queries.ts` (`GET /estaciones`, `/estaciones/{id}`, `/estaciones/{id}/historial`, `/estaciones/{id}/estadisticas`).
+- [X] T025 [US2] Pantalla `WeatherStation_MOVIL/src/screens/EstacionesScreen.tsx` (lista autenticada) y `EstacionDetalleScreen.tsx` (lectura actual + estado).
+- [X] T026 [US2] Componente `WeatherStation_MOVIL/src/components/Grafica.tsx` con la librería RN (serie temporal, rango seleccionable) y pantalla `GraficasScreen.tsx` (FR-008).
+- [X] T027 [P] [US2] Hooks de IA en `queries.ts`: `POST /ia/preguntar`, `/ia/resumen`, `/ia/prediccion`.
+- [X] T028 [US2] Pantalla `WeatherStation_MOVIL/src/screens/AsistenteIAScreen.tsx` (solo autenticado) con input de pregunta y render de respuesta (FR-009).
+- [X] T029 [P] [US2] Hook `useAlertas` (`GET /alertas`) y visualización con `AlertBanner` (FR-010).
+- [X] T030 [US2] Botón/acción de logout que limpia SecureStore y vuelve a público (FR-005).
 
 **Checkpoint**: US2 entregable; con US1+US2 la app cubre todo el consumo de datos.
 

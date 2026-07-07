@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import type {
-  Estacion, PublicEstacion, PublicEstadistica,
+  Alerta, Estacion, Estadisticas, IaResponse, Lectura,
+  PublicEstacion, PublicEstadistica,
 } from './types';
 
 // Rutas verbatim del openapi (spec 001). baseURL = origen del backend.
@@ -29,7 +30,7 @@ export function usePublicEstadisticas(municipio?: string) {
   });
 }
 
-// ── Autenticado (US2 en adelante) ───────────────────────────────────────────
+// ── Autenticado (US2) ───────────────────────────────────────────────────────
 
 /** GET /estaciones → estaciones (según rol). Requiere sesión. */
 export function useEstaciones(enabled = true) {
@@ -48,5 +49,60 @@ export function useEstacion(id: string, enabled = true) {
     enabled,
     queryFn: async () => (await api.get<Estacion>(`/estaciones/${id}`)).data,
     refetchInterval: 30_000,
+  });
+}
+
+/** Rango [ahora - horas, ahora] en ISO para históricos/estadísticas. */
+function rango(horas: number) {
+  const hasta = new Date();
+  const desde = new Date(hasta.getTime() - horas * 3_600_000);
+  return { desde: desde.toISOString(), hasta: hasta.toISOString() };
+}
+
+/** GET /estaciones/{id}/historial → serie temporal de lecturas (FR-008). */
+export function useHistorial(id: string, horas: number, enabled = true) {
+  return useQuery({
+    queryKey: ['historial', id, horas],
+    enabled,
+    queryFn: async () =>
+      (await api.get<Lectura[]>(`/estaciones/${id}/historial`, { params: rango(horas) })).data,
+  });
+}
+
+/** GET /estaciones/{id}/estadisticas → agregados del rango. */
+export function useEstadisticas(id: string, horas: number, enabled = true) {
+  return useQuery({
+    queryKey: ['estadisticas', id, horas],
+    enabled,
+    queryFn: async () =>
+      (await api.get<Estadisticas>(`/estaciones/${id}/estadisticas`, { params: rango(horas) })).data,
+  });
+}
+
+/** GET /alertas → alertas meteorológicas (FR-010). */
+export function useAlertas(enabled = true) {
+  return useQuery({
+    queryKey: ['alertas'],
+    enabled,
+    queryFn: async () => (await api.get<Alerta[]>('/alertas')).data,
+    refetchInterval: 60_000,
+  });
+}
+
+// ── Asistente IA (solo autenticado) — FR-009 ────────────────────────────────
+
+/** POST /ia/preguntar {estacionId, pregunta} → respuesta fundamentada. */
+export function usePreguntarIA() {
+  return useMutation({
+    mutationFn: async (vars: { estacionId: string; pregunta: string }) =>
+      (await api.post<IaResponse>('/ia/preguntar', vars)).data,
+  });
+}
+
+/** POST /ia/resumen {estacionId, horas} → resumen del clima reciente. */
+export function useResumenIA() {
+  return useMutation({
+    mutationFn: async (vars: { estacionId: string; horas?: number }) =>
+      (await api.post<IaResponse>('/ia/resumen', { horas: 24, ...vars })).data,
   });
 }

@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import {
   FlatList, Pressable, RefreshControl, StyleSheet, Text, View, useColorScheme,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { usePublicEstaciones } from '../lib/queries';
 import { mensajeError } from '../lib/api';
 import { useAuth } from '../auth/AuthContext';
@@ -11,12 +12,13 @@ import { SensorCard } from '../components/SensorCard';
 import { EstadoBadge } from '../components/EstadoBadge';
 import { Loading } from '../components/Loading';
 import { ErrorRetry } from '../components/ErrorRetry';
-import type { PantallaProps } from '../navigation/types';
+import type { RootNav } from '../navigation/types';
 import type { PublicEstacion } from '../lib/types';
 
 // US1: vista pública sin cuenta. Lista estaciones aprobadas + clima actual.
-export function PublicoScreen({ navigation }: PantallaProps<'Publico'>) {
+export function PublicoScreen() {
   const t = usarTema(useColorScheme());
+  const navigation = useNavigation<RootNav>();
   const { autenticado } = useAuth();
   const { data, isPending, isError, error, refetch, isRefetching } = usePublicEstaciones();
 

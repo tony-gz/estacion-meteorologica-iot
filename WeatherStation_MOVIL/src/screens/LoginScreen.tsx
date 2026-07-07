@@ -7,20 +7,23 @@ import { mensajeError } from '../lib/api';
 import { usarTema } from '../theme/theme';
 import type { PantallaProps } from '../navigation/types';
 
-// Login mínimo (MVP). US2 ampliará validación, registro y UX.
+// US2: login/registro. Guarda tokens+usuario en SecureStore vía AuthContext.
 export function LoginScreen({ navigation }: PantallaProps<'Login'>) {
   const t = usarTema(useColorScheme());
-  const { login } = useAuth();
+  const { login, registrar } = useAuth();
+  const [modo, setModo] = useState<'login' | 'registro'>('login');
+  const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
-  async function onEntrar() {
+  async function onSubmit() {
     setError(null);
     setEnviando(true);
     try {
-      await login(email.trim(), password);
+      if (modo === 'login') await login(email.trim(), password);
+      else await registrar(nombre.trim(), email.trim(), password);
       navigation.goBack();
     } catch (e) {
       setError(mensajeError(e));
@@ -29,7 +32,8 @@ export function LoginScreen({ navigation }: PantallaProps<'Login'>) {
     }
   }
 
-  const deshabilitado = enviando || !email || !password;
+  const faltan = modo === 'registro' ? !nombre : false;
+  const deshabilitado = enviando || !email || !password || faltan;
 
   return (
     <KeyboardAvoidingView
@@ -37,8 +41,19 @@ export function LoginScreen({ navigation }: PantallaProps<'Login'>) {
       style={[styles.contenedor, { backgroundColor: t.fondo }]}
     >
       <View style={styles.form}>
-        <Text style={[styles.titulo, { color: t.texto }]}>Iniciar sesión</Text>
+        <Text style={[styles.titulo, { color: t.texto }]}>
+          {modo === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
+        </Text>
 
+        {modo === 'registro' && (
+          <TextInput
+            style={[styles.input, { backgroundColor: t.superficie, borderColor: t.borde, color: t.texto }]}
+            placeholder="Nombre"
+            placeholderTextColor={t.textoTenue}
+            value={nombre}
+            onChangeText={setNombre}
+          />
+        )}
         <TextInput
           style={[styles.input, { backgroundColor: t.superficie, borderColor: t.borde, color: t.texto }]}
           placeholder="Correo"
@@ -60,12 +75,23 @@ export function LoginScreen({ navigation }: PantallaProps<'Login'>) {
         {error && <Text style={[styles.error, { color: t.error }]}>{error}</Text>}
 
         <Pressable
-          onPress={onEntrar}
+          onPress={onSubmit}
           disabled={deshabilitado}
           style={[styles.boton, { backgroundColor: t.primario, opacity: deshabilitado ? 0.5 : 1 }]}
           accessibilityRole="button"
         >
-          <Text style={styles.botonTexto}>{enviando ? 'Entrando…' : 'Entrar'}</Text>
+          <Text style={styles.botonTexto}>
+            {enviando ? 'Enviando…' : modo === 'login' ? 'Entrar' : 'Registrarme'}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => { setModo(modo === 'login' ? 'registro' : 'login'); setError(null); }}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.alterna, { color: t.primario }]}>
+            {modo === 'login' ? '¿No tienes cuenta? Crear una' : '¿Ya tienes cuenta? Inicia sesión'}
+          </Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -80,4 +106,5 @@ const styles = StyleSheet.create({
   error: { fontSize: 14 },
   boton: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   botonTexto: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  alterna: { fontSize: 14, textAlign: 'center', marginTop: 4 },
 });
