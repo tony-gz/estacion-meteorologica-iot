@@ -1,0 +1,28 @@
+# Expo / React Native
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Native builds
+android/
+ios/
+*.apk
+*.aab
+*.ipa
+
+# Env / secrets
+.env*
+!.env.example
+
+# Metro
+.metro-health-check*
+
+# Misc
+.DS_Store
+*.tsbuildinfo
+expo-env.d.ts

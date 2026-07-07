@@ -1,0 +1,35 @@
+{
+  "name": "weatherstation-movil",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "start:go": "expo start",
+    "android": "expo run:android",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "jest",
+    "check:no-firebase": "if grep -rniE 'firebase' app.config.ts src/; then echo 'ERROR: referencia a Firebase encontrada' && exit 1; else echo 'OK: sin Firebase'; fi"
+  },
+  "dependencies": {
+    "@react-navigation/bottom-tabs": "^7.2.0",
+    "@react-navigation/native": "^7.0.14",
+    "@react-navigation/native-stack": "^7.2.0",
+    "@tanstack/react-query": "^5.62.11",
+    "axios": "^1.7.9",
+    "expo": "~52.0.23",
+    "expo-asset": "~11.0.5",
+    "expo-constants": "~17.0.4",
+    "expo-secure-store": "~14.0.1",
+    "expo-status-bar": "~2.0.1",
+    "react": "18.3.1",
+    "react-native": "0.76.5",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.4.0"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.12",
+    "typescript": "^5.3.3"
+  },
+  "private": true
+}

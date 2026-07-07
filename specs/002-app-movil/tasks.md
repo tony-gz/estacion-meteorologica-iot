@@ -32,14 +32,14 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 **Purpose**: inicializar el proyecto Expo y las dependencias base.
 
-- [ ] T001 Inicializar app Expo (TypeScript) en `WeatherStation_MOVIL/` con `expo-dev-client` (`npx create-expo-app`), fijando SDK 52+.
-- [ ] T002 Añadir dependencias base en `WeatherStation_MOVIL/package.json`: `@tanstack/react-query`, `axios`, `expo-secure-store`, `expo-constants`, `@react-navigation/native` + `@react-navigation/native-stack` + `@react-navigation/bottom-tabs` (+ `react-native-screens`, `react-native-safe-area-context`).
+- [X] T001 Inicializar app Expo (TypeScript) en `WeatherStation_MOVIL/` con `expo-dev-client` (`npx create-expo-app`), fijando SDK 52+.
+- [X] T002 Añadir dependencias base en `WeatherStation_MOVIL/package.json`: `@tanstack/react-query`, `axios`, `expo-secure-store`, `expo-constants`, `@react-navigation/native` + `@react-navigation/native-stack` + `@react-navigation/bottom-tabs` (+ `react-native-screens`, `react-native-safe-area-context`).
 - [ ] T003 [P] Añadir dependencias BLE y permisos: `react-native-ble-plx` (+ su config plugin) y utilidades de permisos en `WeatherStation_MOVIL/package.json`.
 - [ ] T004 [P] Añadir librería de gráficas RN (`react-native-gifted-charts` o `victory-native`) en `WeatherStation_MOVIL/package.json`.
-- [ ] T005 Configurar `WeatherStation_MOVIL/app.config.ts`: nombre/slug/paquete, plugin de `react-native-ble-plx`, permisos Android (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `ACCESS_FINE_LOCATION`) y `API_URL` vía `expo-constants`/env.
-- [ ] T006 [P] Crear `WeatherStation_MOVIL/eas.json` con perfiles `development` (dev client), `preview` y `production`.
+- [X] T005 Configurar `WeatherStation_MOVIL/app.config.ts`: nombre/slug/paquete, plugin de `react-native-ble-plx`, permisos Android (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `ACCESS_FINE_LOCATION`) y `API_URL` vía `expo-constants`/env.
+- [X] T006 [P] Crear `WeatherStation_MOVIL/eas.json` con perfiles `development` (dev client), `preview` y `production`.
 - [ ] T007 [P] Configurar linting/format (oxlint o eslint + prettier) y `tsconfig.json` en `WeatherStation_MOVIL/`.
-- [ ] T008 [P] Añadir script de verificación "sin Firebase" (SC-006) al `package.json` (grep de `firebase` que falle si aparece).
+- [X] T008 [P] Añadir script de verificación "sin Firebase" (SC-006) al `package.json` (grep de `firebase` que falle si aparece).
 
 **Checkpoint**: `npx expo start --dev-client` levanta la app vacía en un development build.
 
@@ -49,14 +49,14 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 **Purpose**: capa de datos/auth compartida por TODAS las historias. Bloqueante.
 
-- [ ] T009 Portar tipos DTO a `WeatherStation_MOVIL/src/lib/types.ts` desde `WeatherStation_Front/src/lib/types.ts` (Rol, AuthResponse, Usuario, Lectura, Estacion, PublicEstacion, Alerta, Solicitud, IaResponse).
-- [ ] T010 Implementar `WeatherStation_MOVIL/src/lib/tokens.ts` sobre **expo-secure-store** (get/set/clear async de access, refresh, usuario) — reemplazo del `localStorage` del Front.
-- [ ] T011 Portar/adaptar `WeatherStation_MOVIL/src/lib/api.ts`: instancia axios con `baseURL = API_URL` (expo-constants), interceptor de request **async** que lee el token de SecureStore, e interceptor de respuesta con refresh (rotación) y logout en 401 no recuperable (navegación RN, no `location.href`).
-- [ ] T012 [P] Portar `WeatherStation_MOVIL/src/lib/format.ts` (formateo de fechas con **zona explícita** del backend; sin recálculo de UTC — FR-011).
-- [ ] T013 Implementar `WeatherStation_MOVIL/src/auth/AuthContext.tsx` (estado de sesión, rol, login/logout, hidratación desde SecureStore) adaptado de `WeatherStation_Front/src/auth/AuthContext.tsx`.
-- [ ] T014 Configurar `WeatherStation_MOVIL/src/lib/queryClient.ts` (QueryClientProvider) y envolver la app en `App.tsx` (NavigationContainer + QueryClientProvider + AuthProvider).
-- [ ] T015 Definir la navegación base con **@react-navigation** en `WeatherStation_MOVIL/src/navigation/`: stack **público** y stack **protegido** (native-stack + bottom-tabs), con gate por sesión/rol (FR-012).
-- [ ] T016 [P] Crear componentes UI compartidos en `WeatherStation_MOVIL/src/components/`: `SensorCard`, `EstadoBadge`, `AlertBanner`, `ErrorRetry`, `Loading`.
+- [X] T009 Portar tipos DTO a `WeatherStation_MOVIL/src/lib/types.ts` desde `WeatherStation_Front/src/lib/types.ts` (Rol, AuthResponse, Usuario, Lectura, Estacion, PublicEstacion, Alerta, Solicitud, IaResponse).
+- [X] T010 Implementar `WeatherStation_MOVIL/src/lib/tokens.ts` sobre **expo-secure-store** (get/set/clear async de access, refresh, usuario) — reemplazo del `localStorage` del Front.
+- [X] T011 Portar/adaptar `WeatherStation_MOVIL/src/lib/api.ts`: instancia axios con `baseURL = API_URL` (expo-constants), interceptor de request **async** que lee el token de SecureStore, e interceptor de respuesta con refresh (rotación) y logout en 401 no recuperable (navegación RN, no `location.href`).
+- [X] T012 [P] Portar `WeatherStation_MOVIL/src/lib/format.ts` (formateo de fechas con **zona explícita** del backend; sin recálculo de UTC — FR-011).
+- [X] T013 Implementar `WeatherStation_MOVIL/src/auth/AuthContext.tsx` (estado de sesión, rol, login/logout, hidratación desde SecureStore) adaptado de `WeatherStation_Front/src/auth/AuthContext.tsx`.
+- [X] T014 Configurar `WeatherStation_MOVIL/src/lib/queryClient.ts` (QueryClientProvider) y envolver la app en `App.tsx` (NavigationContainer + QueryClientProvider + AuthProvider).
+- [X] T015 Definir la navegación base con **@react-navigation** en `WeatherStation_MOVIL/src/navigation/`: stack **público** y stack **protegido** (native-stack + bottom-tabs), con gate por sesión/rol (FR-012).
+- [X] T016 [P] Crear componentes UI compartidos en `WeatherStation_MOVIL/src/components/`: `SensorCard`, `EstadoBadge`, `AlertBanner`, `ErrorRetry`, `Loading`.
 
 **Checkpoint**: la app arranca, resuelve sesión desde SecureStore y enruta a público o protegido.
 
@@ -68,10 +68,10 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 **Independent Test**: abrir la app sin sesión → lista de estaciones + lectura actual; IA/históricos piden login.
 
-- [ ] T017 [P] [US1] Hook `usePublicEstaciones`/`usePublicWeather` en `WeatherStation_MOVIL/src/lib/queries.ts` consumiendo `GET /api/public/stations` y `GET /api/public/weather/latest`.
-- [ ] T018 [US1] Pantalla pública `WeatherStation_MOVIL/src/screens/PublicoScreen.tsx`: lista de estaciones aprobadas con `SensorCard` (temp, humedad, presión, viento, lluvia).
-- [ ] T019 [US1] Estado de carga/error con reintento en la vista pública (FR-020) y mensaje claro sin red.
-- [ ] T020 [US1] Gating: los accesos a IA/históricos desde la vista pública redirigen a login (FR-006).
+- [X] T017 [P] [US1] Hook `usePublicEstaciones`/`usePublicWeather` en `WeatherStation_MOVIL/src/lib/queries.ts` consumiendo `GET /api/public/stations` y `GET /api/public/weather/latest`.
+- [X] T018 [US1] Pantalla pública `WeatherStation_MOVIL/src/screens/PublicoScreen.tsx`: lista de estaciones aprobadas con `SensorCard` (temp, humedad, presión, viento, lluvia).
+- [X] T019 [US1] Estado de carga/error con reintento en la vista pública (FR-020) y mensaje claro sin red.
+- [X] T020 [US1] Gating: los accesos a IA/históricos desde la vista pública redirigen a login (FR-006).
 - [ ] T021 [P] [US1] (Opcional) `GET /api/public/statistics` para un resumen agregado en la vista pública.
 
 **Checkpoint**: US1 entregable y demostrable de forma independiente (MVP).
