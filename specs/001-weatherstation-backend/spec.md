@@ -131,6 +131,15 @@ y nunca recibe token.
 3. **Given** una solicitud `PENDING`, **When** un ADMIN `POST /solicitudes/{id}/aprobar`,
    **Then** pasa a `APPROVED`, se genera el token, se envía por email al
    solicitante y la respuesta devuelve el token **una única vez**.
+   - **Corrección 2026-07-08 (fix de gobernanza)**: al aprobar, si el solicitante es
+     `USUARIO` **o** `INVESTIGADOR`, se le asciende a **`RESPONSABLE`** (no a INVESTIGADOR) y
+     se le asigna la **escuela** resuelta/creada en la aprobación. Motivo: la estación queda
+     con `responsable = solicitante` y las capacidades de gestión (editar, conexiones,
+     provisioning BLE, ver no-aprobadas) están gated a RESPONSABLE; ascender a INVESTIGADOR
+     dejaba al dueño sin poder gestionar su propia estación. INVESTIGADOR queda como rol de
+     **solo lectura de datos de red**, asignado por ADMIN. Bug en `SolicitudService.aprobar()`
+     (~L199-204: `setRol(Rol.INVESTIGADOR)`). Requiere **backfill** de usuarios ya
+     mal-ascendidos que sean `responsable` de alguna estación.
 4. **Given** una solicitud `PENDING`, **When** un ADMIN `POST /solicitudes/{id}/rechazar`,
    **Then** pasa a `REJECTED`, no se emite token y se envía email de rechazo al
    solicitante.
