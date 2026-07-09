@@ -122,9 +122,11 @@ se autogeneran. 3 bugs hallados y corregidos por los smoke tests durante el cami
 | `WeatherStation_ESP32/` | Firmware de las estaciones (referencia, **no se modifica**) | — |
 | `WeatherStation_Backend/` | API REST (Java 21 / Spring Boot) — único acceso a Firebase y Gemini | ✅ Completo, listo para Render |
 | `WeatherStation_Front/` | Panel web **CLIMBOT** (React + Vite + TS) | ✅ Funcional, falta deploy |
-| `WeatherStation_MOVIL/` | App Flutter (existente) | — |
+| `WeatherStation_MOVIL/` | App móvil **React Native + Expo** (consume el backend Spring) | 🔄 US1–US4 hechas y verificadas (typecheck/bundle/tests); falta prueba BLE con ESP32 real |
+| `WeatherStation_MOVIL_Flutter/` | App Flutter **obsoleta** (apuntaba a Firebase). Archivada como referencia; reemplazada por `WeatherStation_MOVIL/` | 🗄️ Archivada |
 | `WeatherStation_WEB/` | Dashboard HTML viejo (referencia, reemplazado por el front React) | — |
-| `specs/001-weatherstation-backend/` | Especificaciones SDD (spec-kit) | ✅ |
+| `specs/001-weatherstation-backend/` | Especificaciones SDD (spec-kit) — backend | ✅ |
+| `specs/002-app-movil/` | Especificaciones SDD — app móvil React Native (spec→plan→tasks) | ✅ |
 
 ## Arquitectura
 

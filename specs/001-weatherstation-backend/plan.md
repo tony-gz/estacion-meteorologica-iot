@@ -78,7 +78,7 @@ reglas de alerta iniciales, máquina de estados de estación de 4 estados.
 
 ```
 [ESP32 x N] --REST /api/device/**--> [WeatherStation Backend] --JDBC (lee/escribe)--> [PostgreSQL]
-                                            +--REST--> [Flutter / Web]
+                                            +--REST--> [Móvil (React Native) / Web]
                                             +--HTTPS--> [Gemini API]
 ```
 

@@ -412,3 +412,18 @@ flowchart LR
 **Ajustes posteriores v1**: CORS para el front (5173/4173); activar/desactivar
 estaciones (`EstacionAdmin.habilitada`). El front CLIMBOT (React+Vite+TS) consume
 la API v1. Todo ello es la base sobre la que se construye v3.
+
+---
+
+## Corrección pendiente (fix de gobernanza — 2026-07-08)
+
+- [ ] **T-GOV1** Corregir el ascenso de rol en `SolicitudService.aprobar()` (~L199-204):
+  al aprobar, si el solicitante es `USUARIO` o `INVESTIGADOR`, ponerlo en **`RESPONSABLE`**
+  (no INVESTIGADOR) y asignarle la `escuela` resuelta en la aprobación. No degradar ADMIN.
+  Actualizar/añadir test de `aprobar` que verifique el rol resultante. (Ver spec.md US2
+  escenario 3, corrección.)
+- [ ] **T-GOV2** Backfill único: usuarios con rol `INVESTIGADOR` que sean `responsable` de
+  alguna estación → remapear a `RESPONSABLE` (+ escuela). Consulta/migración puntual.
+
+> Origen: revisión de roles del incremento móvil 002.1. Detalle y matriz de roles en
+> `specs/002-app-movil/plan-provisioning-completo.md` §7.

@@ -13,7 +13,7 @@ Boot** (nunca a un almacén externo). El backend es el único componente con acc
 a la base de datos **PostgreSQL** (almacén único de todo el sistema, incluidas las
 lecturas) y el que administra el ciclo de vida de las estaciones (registro,
 aprobación, tokens, conexión). Expone una API REST segura (JWT + roles) a las
-aplicaciones Flutter y Web y al cliente de IA.
+aplicaciones móvil (React Native) y Web y al cliente de IA.
 
 ---
 
@@ -70,7 +70,7 @@ backend** mediante endpoints REST autenticados. El backend:
 | **ADMIN** | Gobierna toda la plataforma: usuarios, escuelas, estaciones, aprobaciones y tokens; acceso total. |
 | **PostgreSQL** | Almacén único (sistema + lecturas meteorológicas). Solo el backend lo lee y escribe. |
 | **Gemini API** | Modelo de IA externo invocado por el backend. |
-| **Cliente Flutter / Web** | Front-ends que consumen la API REST. |
+| **Cliente móvil (React Native) / Web** | Front-ends que consumen la API REST. La app móvil (ver spec `002`) añade, además, provisioning WiFi por BLE del ESP32. |
 
 ---
 
@@ -131,6 +131,15 @@ y nunca recibe token.
 3. **Given** una solicitud `PENDING`, **When** un ADMIN `POST /solicitudes/{id}/aprobar`,
    **Then** pasa a `APPROVED`, se genera el token, se envía por email al
    solicitante y la respuesta devuelve el token **una única vez**.
+   - **Corrección 2026-07-08 (fix de gobernanza)**: al aprobar, si el solicitante es
+     `USUARIO` **o** `INVESTIGADOR`, se le asciende a **`RESPONSABLE`** (no a INVESTIGADOR) y
+     se le asigna la **escuela** resuelta/creada en la aprobación. Motivo: la estación queda
+     con `responsable = solicitante` y las capacidades de gestión (editar, conexiones,
+     provisioning BLE, ver no-aprobadas) están gated a RESPONSABLE; ascender a INVESTIGADOR
+     dejaba al dueño sin poder gestionar su propia estación. INVESTIGADOR queda como rol de
+     **solo lectura de datos de red**, asignado por ADMIN. Bug en `SolicitudService.aprobar()`
+     (~L199-204: `setRol(Rol.INVESTIGADOR)`). Requiere **backfill** de usuarios ya
+     mal-ascendidos que sean `responsable` de alguna estación.
 4. **Given** una solicitud `PENDING`, **When** un ADMIN `POST /solicitudes/{id}/rechazar`,
    **Then** pasa a `REJECTED`, no se emite token y se envía email de rechazo al
    solicitante.
@@ -613,9 +622,12 @@ fricción de registro, manteniendo cerrado lo sensible y costoso (IA, gestión).
 ## Out of Scope (v2)
 
 - Control remoto/comandos hacia las estaciones (más allá de la ingesta de datos).
-- Configuración WiFi/BLE de las estaciones (firmware + app móvil).
-- Notificaciones push (las gestiona el cliente; el backend expone alertas).
-- Dashboards/visualización (front-ends Web/Flutter).
+- Configuración WiFi/BLE de las estaciones (firmware + app móvil). El *cómo* de
+  la app móvil vive en la spec `002-weatherstation-movil`; el backend no participa
+  en el handshake BLE.
+- Notificaciones push (las gestiona el cliente; el backend expone alertas). Push
+  queda fuera de alcance también en la spec `002` (fase posterior).
+- Dashboards/visualización (front-ends Web y móvil React Native).
 - Federación entre múltiples backends/regiones; v2 asume una sola plataforma con
   múltiples escuelas.
 - Aprovisionamiento automático de certificados por dispositivo (mTLS); v2 usa

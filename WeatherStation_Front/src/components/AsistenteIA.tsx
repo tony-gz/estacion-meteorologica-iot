@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { api, mensajeError } from '../lib/api';
 import type { IaResponse } from '../lib/types';
 import { fmtFechaHora } from '../lib/format';
+import { Icono } from './Icono';
 
 type Accion = 'preguntar' | 'resumen' | 'prediccion';
 
@@ -102,8 +103,8 @@ export function AsistenteIA({ estacionId }: { estacionId: string }) {
           {m.data.advertencias.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {m.data.advertencias.map((a) => (
-                <span key={a} className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                  ⚠ {a}
+                <span key={a} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                  <Icono nombre="⚠" size={12} /> {a}
                 </span>
               ))}
             </div>

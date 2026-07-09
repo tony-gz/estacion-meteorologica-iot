@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import type { Estacion } from '../lib/types';
 import { fmtNum, fmtFechaHora } from '../lib/format';
 import { EstadoBadge } from './EstadoBadge';
+import { Icono } from './Icono';
 
 export function EstacionCard({ estacion }: { estacion: Estacion }) {
   const l = estacion.ultimaLectura;
@@ -46,8 +47,8 @@ export function EstacionCard({ estacion }: { estacion: Estacion }) {
 
 function Dato({ icono, valor, sub }: { icono: string; valor: string; sub?: string }) {
   return (
-    <div className="rounded-lg bg-slate-50 py-2 dark:bg-slate-700/50">
-      <div className="text-lg" aria-hidden>{icono}</div>
+    <div className="rounded-lg bg-slate-50 py-2 flex flex-col items-center dark:bg-slate-700/50">
+      <Icono nombre={icono} size={18} className="text-sky-600 dark:text-sky-400" />
       <div className="font-semibold text-slate-700 text-sm dark:text-slate-100">{valor}</div>
       {sub && <div className="text-[10px] text-slate-400">{sub}</div>}
     </div>

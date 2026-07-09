@@ -196,10 +196,20 @@ public class SolicitudService {
                     token);
         }
 
-        // Ascender al solicitante a INVESTIGADOR si era USUARIO
+        // Ascender al solicitante a RESPONSABLE: es el dueño de la estación
+        // (responsable = solicitante) y las capacidades de gestión (editar, conexiones,
+        // provisioning BLE, ver estaciones no aprobadas) están gated a RESPONSABLE.
+        // INVESTIGADOR queda como rol de solo lectura de datos de red (lo asigna un ADMIN).
+        // Se liga a la escuela resuelta en la aprobación si aún no tiene una (regla de
+        // negocio: un RESPONSABLE debe estar asociado a una escuela).
         Usuario solicitante = solicitud.getSolicitante();
-        if (solicitante != null && solicitante.getRol() == Rol.USUARIO) {
-            solicitante.setRol(Rol.INVESTIGADOR);
+        if (solicitante != null
+                && (solicitante.getRol() == Rol.USUARIO
+                    || solicitante.getRol() == Rol.INVESTIGADOR)) {
+            solicitante.setRol(Rol.RESPONSABLE);
+            if (solicitante.getEscuela() == null) {
+                solicitante.setEscuela(escuela);
+            }
             usuarioRepository.save(solicitante);
         }
 

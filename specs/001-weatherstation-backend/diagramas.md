@@ -31,7 +31,7 @@ flowchart TB
     GEM["Gemini API"]
 
     subgraph Clientes
-        FL["Flutter"]
+        FL["Móvil (React Native)"]
         WEB["Web (CLIMBOT)"]
     end
 
@@ -219,7 +219,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Cli as Cliente (Flutter/Web)
+    participant Cli as Cliente (Móvil RN/Web)
     participant AC as AuthController
     participant AS as AuthService
     participant UR as UsuarioRepository
@@ -407,5 +407,5 @@ flowchart LR
     GE["Gemini API"]
     APP --> GE
     ESP["ESP32 (campo)"] -- "/api/device/**" --> APP
-    Clientes["Flutter / Web"] -- "REST + JWT" --> APP
+    Clientes["Móvil (React Native) / Web"] -- "REST + JWT" --> APP
 ```

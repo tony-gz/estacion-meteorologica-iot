@@ -9,6 +9,7 @@ import { Modal } from '../../components/Modal';
 import { EstadoBadge } from '../../components/EstadoBadge';
 import { MenuAcciones, MenuItem, MenuSep } from '../../components/MenuAcciones';
 import { fmtFechaHora } from '../../lib/format';
+import { Icono } from '../../components/Icono';
 import type { Estacion, StationToken } from '../../lib/types';
 
 const ESTADO_COLOR: Record<string, string> = {
@@ -113,7 +114,7 @@ function Fila({ e, onToken, onConexiones }: {
               <MenuSep />
               <MenuItem tono="danger"
                         onClick={() => { close(); if (confirm(`¿Eliminar ${e.nombre}?`)) eliminar.mutate(e.uuid); }}>
-                🗑 Eliminar
+                <span className="inline-flex items-center gap-1.5"><Icono nombre="🗑" size={14} /> Eliminar</span>
               </MenuItem>
             </>
           )}
@@ -170,8 +171,8 @@ function TokenModal({ token, onCerrar }: { token: StationToken; onCerrar: () => 
   const [copiadoUuid, setCopiadoUuid] = useState(false);
   return (
     <Modal abierto onCerrar={onCerrar} titulo="Token y UUID de la estación">
-      <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900">
-        ⚠ {token.aviso}
+      <p className="flex items-center gap-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900">
+        <Icono nombre="⚠" size={15} className="shrink-0" /> {token.aviso}
       </p>
       <div className="space-y-3">
         <div>
@@ -186,10 +187,10 @@ function TokenModal({ token, onCerrar }: { token: StationToken; onCerrar: () => 
       <div className="flex justify-end gap-2 pt-3">
         <button className={btnSec} onClick={() => {
           navigator.clipboard?.writeText(token.uuid); setCopiadoUuid(true);
-        }}>{copiadoUuid ? 'UUID copiado ✓' : 'Copiar UUID'}</button>
+        }}>{copiadoUuid ? 'UUID copiado' : 'Copiar UUID'}</button>
         <button className={btnSec} onClick={() => {
           navigator.clipboard?.writeText(token.token); setCopiadoToken(true);
-        }}>{copiadoToken ? 'Token copiado ✓' : 'Copiar Token'}</button>
+        }}>{copiadoToken ? 'Token copiado' : 'Copiar Token'}</button>
         <button className={btnPri} onClick={onCerrar}>Cerrar</button>
       </div>
     </Modal>

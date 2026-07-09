@@ -10,12 +10,13 @@ import { EstadoBadge } from '../components/EstadoBadge';
 import { Grafica } from '../components/Grafica';
 import { AsistenteIA } from '../components/AsistenteIA';
 import { FondoClima, calcularEstado } from '../components/FondoClima';
+import { Icono } from '../components/Icono';
 
-const ETIQUETA_CLIMA: Record<string, string> = {
-  day: '☀️ Despejado',
-  night: '🌙 Noche despejada',
-  rain: '🌧️ Lluvia',
-  storm: '⛈️ Tormenta',
+const CLIMA: Record<string, { sym: string; texto: string }> = {
+  day: { sym: '☀️', texto: 'Despejado' },
+  night: { sym: '🌙', texto: 'Noche despejada' },
+  rain: { sym: '🌧️', texto: 'Lluvia' },
+  storm: { sym: '⛈️', texto: 'Tormenta' },
 };
 
 const RANGOS = [
@@ -56,15 +57,18 @@ export function EstacionDetallePage() {
           <div className="flex items-end justify-between gap-3">
             <div>
               {l && <div className="text-5xl font-bold drop-shadow-md leading-none">{fmtNum(l.temperatura)}°</div>}
-              <div className="text-white/90 text-sm mt-1 drop-shadow">
-                {ETIQUETA_CLIMA[calcularEstado(l?.lluviaMm ?? 0, l?.vientoKmh ?? 0)]}
+              <div className="text-white/90 text-sm mt-1 drop-shadow flex items-center gap-1.5">
+                {(() => {
+                  const c = CLIMA[calcularEstado(l?.lluviaMm ?? 0, l?.vientoKmh ?? 0)];
+                  return <><Icono nombre={c.sym} size={16} className="text-white" /> {c.texto}</>;
+                })()}
               </div>
             </div>
             {l && (
               <div className="text-right text-white/90 text-xs sm:text-sm drop-shadow space-y-0.5">
-                <div>💧 {fmtNum(l.humedad, 0)} %</div>
-                <div>💨 {fmtNum(l.vientoKmh)} km/h {l.vientoDir}</div>
-                <div>🌧️ {fmtNum(l.lluviaMm)} mm</div>
+                <div className="flex items-center justify-end gap-1.5"><Icono nombre="💧" size={14} className="text-white" /> {fmtNum(l.humedad, 0)} %</div>
+                <div className="flex items-center justify-end gap-1.5"><Icono nombre="💨" size={14} className="text-white" /> {fmtNum(l.vientoKmh)} km/h {l.vientoDir}</div>
+                <div className="flex items-center justify-end gap-1.5"><Icono nombre="🌧️" size={14} className="text-white" /> {fmtNum(l.lluviaMm)} mm</div>
               </div>
             )}
           </div>
