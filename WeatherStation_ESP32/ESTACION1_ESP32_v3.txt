@@ -46,12 +46,12 @@
 
 // Credenciales de ESTA estación (las da el backend al APROBARLA, una sola vez).
 // Pega aquí el uuid y el token. Más adelante pueden inyectarse por BLE.
-#define EST_UUID       "PEGA-AQUI-EL-UUID-DE-LA-ESTACION"
-#define EST_TOKEN      "stk_PEGA-AQUI-EL-TOKEN"
+#define EST_UUID       "60ce6191-cf10-48eb-88ae-045cda08568c"
+#define EST_TOKEN      "stk_qjI4mS4lMW5FfjFKoHZGlN1tvehJ3WP2v0S-VOy3zkI"
 
 // Si dejas vacío, sólo se podrá configurar WiFi por BLE o cargar de flash.
-#define WIFI_SSID  ""
-#define WIFI_PASS  ""
+#define WIFI_SSID  "404! Error de red"
+#define WIFI_PASS  "hdkRI4apUuLMgv5m"
 
 #define BLE_ESPERA_MS         60000UL   // 60 s sin conexión → red guardada
 #define BLE_GRACIA_DESC_MS    30000UL
@@ -84,6 +84,7 @@
 #define BLE_PASS_UUID     "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 #define BLE_STATUS_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26aa"
 #define BLE_CMD_UUID      "beb5483e-36e1-4688-b7f5-ea07361b26ab"
+#define BLE_CONFIG_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26ac"  // paquete único (002.1)
 
 // ── Objetos ──
 Adafruit_AHTX0    aht;
@@ -104,6 +105,17 @@ volatile bool       credencialesRecibidas  = false;
 String              nuevaSSID = "";
 String              nuevaPass = "";
 bool                bleActivo = false;
+
+// ── Config de operación en runtime (002.1) ──
+// Antes eran #define fijos; ahora son variables: se cargan de NVS (fallback a los
+// #define) y pueden inyectarse por BLE en un paquete único (característica CONFIG).
+String  cfgUuid  = EST_UUID;
+String  cfgToken = EST_TOKEN;
+String  cfgUrl   = BACKEND_URL;
+// Datos recibidos por el paquete BLE CONFIG (además de nuevaSSID/nuevaPass).
+String  nuevoUuid = "", nuevoToken = "", nuevaUrl = "";
+bool    configCompletaPorBLE = false;   // true si llegó por CONFIG (no por SSID/PASS legado)
+String  authStatus = "";                // AUTH_OK / AUTH_FAIL:{code} del último handshake
 
 // ── Sensores / estado ──
 volatile int contViento  = 0;
@@ -126,12 +138,36 @@ void IRAM_ATTR isrLluvia() { contLluvia++; }
 // ════════════════════════════════════════════
 String leerSSID() { prefs.begin("wifi",true); String s=prefs.getString("ssid",""); prefs.end(); return s; }
 String leerPass() { prefs.begin("wifi",true); String p=prefs.getString("pass",""); prefs.end(); return p; }
+String leerUuid()  { prefs.begin("wifi",true); String v=prefs.getString("uuid","");  prefs.end(); return v; }
+String leerToken() { prefs.begin("wifi",true); String v=prefs.getString("token",""); prefs.end(); return v; }
+String leerUrl()   { prefs.begin("wifi",true); String v=prefs.getString("url","");   prefs.end(); return v; }
 void guardarWifi(const String& ssid, const String& pass) {
   prefs.begin("wifi", false);
   prefs.putString("ssid", ssid);
   prefs.putString("pass", pass);
   prefs.end();
   Serial.println("[Prefs] Credenciales guardadas: " + ssid);
+}
+
+// Persiste la configuración completa (WiFi + identidad + backend). El token NO se
+// imprime en logs.
+void guardarConfig(const String& ssid, const String& pass, const String& uuid,
+                   const String& token, const String& url) {
+  prefs.begin("wifi", false);
+  prefs.putString("ssid", ssid);
+  prefs.putString("pass", pass);
+  if (!uuid.isEmpty())  prefs.putString("uuid", uuid);
+  if (!token.isEmpty()) prefs.putString("token", token);
+  if (!url.isEmpty())   prefs.putString("url", url);
+  prefs.end();
+  Serial.println("[Prefs] Config completa guardada (uuid " + uuid + ", red " + ssid + ")");
+}
+
+// Carga la config persistida sobre los valores por defecto (#define). Se llama al arranque.
+void cargarConfig() {
+  String u = leerUuid();  if (!u.isEmpty()) cfgUuid  = u;
+  String t = leerToken(); if (!t.isEmpty()) cfgToken = t;
+  String r = leerUrl();   if (!r.isEmpty()) cfgUrl   = r;
 }
 
 // ════════════════════════════════════════════
@@ -162,12 +198,12 @@ String dirViento(float angulo) {
 
 // 1) Handshake: token permanente -> JWT de dispositivo (vida corta).
 bool obtenerDeviceToken() {
-  if (WiFi.status() != WL_CONNECTED) return false;
+  if (WiFi.status() != WL_CONNECTED) { authStatus = "AUTH_FAIL:NET"; return false; }
   WiFiClientSecure cli; cli.setInsecure();   // simplificado para el proyecto
   HTTPClient http;
-  if (!http.begin(cli, String(BACKEND_URL) + "/api/device/auth")) return false;
+  if (!http.begin(cli, cfgUrl + "/api/device/auth")) { authStatus = "AUTH_FAIL:NET"; return false; }
   http.addHeader("Content-Type", "application/json");
-  String body = String("{\"uuid\":\"") + EST_UUID + "\",\"token\":\"" + EST_TOKEN +
+  String body = String("{\"uuid\":\"") + cfgUuid + "\",\"token\":\"" + cfgToken +
                 "\",\"firmware\":\"" EST_FIRMWARE "\"}";
   int code = http.POST(body);
   bool ok = false;
@@ -183,6 +219,11 @@ bool obtenerDeviceToken() {
   } else {
     Serial.printf("[AUTH] fallo %d: %s\n", code, http.getString().c_str());
   }
+  // authStatus para el provisioning por BLE (contrato: 401 / NET / TIMEOUT).
+  if (ok)                         authStatus = "AUTH_OK";
+  else if (code == 401 || code == 403) authStatus = "AUTH_FAIL:401";
+  else if (code <= 0)             authStatus = "AUTH_FAIL:NET";
+  else                            authStatus = "AUTH_FAIL:401";
   http.end();
   return ok;
 }
@@ -201,7 +242,7 @@ bool enviarLectura(float temp, float hum, float pres, float viento,
   if (!asegurarToken()) return false;
   WiFiClientSecure cli; cli.setInsecure();
   HTTPClient http;
-  if (!http.begin(cli, String(BACKEND_URL) + "/api/device/data")) return false;
+  if (!http.begin(cli, cfgUrl + "/api/device/data")) return false;
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", "Bearer " + deviceToken);
 
@@ -229,7 +270,7 @@ void enviarHeartbeat() {
   if (!asegurarToken()) return;
   WiFiClientSecure cli; cli.setInsecure();
   HTTPClient http;
-  if (!http.begin(cli, String(BACKEND_URL) + "/api/device/heartbeat")) return;
+  if (!http.begin(cli, cfgUrl + "/api/device/heartbeat")) return;
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", "Bearer " + deviceToken);
   StaticJsonDocument<256> doc;
@@ -278,6 +319,33 @@ class CallbackComando : public BLECharacteristicCallbacks {
     }
   }
 };
+// Paquete único (002.1): JSON {uuid, token, ssid, pass, url?}. Valida y marca listo.
+class CallbackConfig : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    String json = String(c->getValue().c_str());
+    StaticJsonDocument<512> doc;
+    if (deserializeJson(doc, json) != DeserializationError::Ok) {
+      Serial.println("[BLE] CONFIG: JSON inválido");
+      publicarEstado("BAD_CONFIG");
+      return;
+    }
+    String uuid = doc["uuid"] | "";
+    String token = doc["token"] | "";
+    String ssid = doc["ssid"] | "";
+    String pass = doc["pass"] | "";
+    String url  = doc["url"]  | "";
+    if (uuid.isEmpty() || token.isEmpty() || ssid.isEmpty() || pass.isEmpty()) {
+      Serial.println("[BLE] CONFIG: faltan campos obligatorios");
+      publicarEstado("BAD_CONFIG");
+      return;
+    }
+    nuevoUuid = uuid; nuevoToken = token; nuevaSSID = ssid; nuevaPass = pass; nuevaUrl = url;
+    configCompletaPorBLE = true;
+    Serial.println("[BLE] CONFIG recibida (uuid " + uuid + ", red " + ssid + ")");  // token NO se imprime
+    publicarEstado("CONFIG_OK");
+    credencialesRecibidas = true;
+  }
+};
 class CallbackConexion : public BLEServerCallbacks {
   void onConnect(BLEServer* s) override {
     bleClienteConectado = true;
@@ -293,8 +361,9 @@ class CallbackConexion : public BLEServerCallbacks {
 };
 
 void iniciarBLE() {
-  String bleNombre = String("Meteo-") + EST_UUID;
+  String bleNombre = String("Meteo-") + cfgUuid;
   BLEDevice::init(bleNombre.c_str());
+  BLEDevice::setMTU(512);   // para recibir el paquete CONFIG en un solo write (002.1)
   BLEDevice::setPower(ESP_PWR_LVL_P7);
   bleServer = BLEDevice::createServer();
   bleServer->setCallbacks(new CallbackConexion());
@@ -309,6 +378,8 @@ void iniciarBLE() {
   bleStatusChar->setValue("IDLE");
   BLECharacteristic* cc = svc->createCharacteristic(BLE_CMD_UUID, BLECharacteristic::PROPERTY_WRITE);
   cc->setCallbacks(new CallbackComando());
+  BLECharacteristic* cfgc = svc->createCharacteristic(BLE_CONFIG_UUID, BLECharacteristic::PROPERTY_WRITE);
+  cfgc->setCallbacks(new CallbackConfig());
   svc->start();
   BLEAdvertising* adv = BLEDevice::getAdvertising();
   adv->addServiceUUID(BLE_SERVICE_UUID);
@@ -463,8 +534,9 @@ bool esperarConfiguracionBLE() {
 void setup() {
   Serial.begin(115200);
   delay(500);
+  cargarConfig();   // uuid/token/url desde NVS (fallback a los #define)
   Serial.println("\n[INIT] Red Meteorológica — backend REST (sin Firebase)");
-  Serial.println("[INIT] UUID:     " EST_UUID);
+  Serial.println("[INIT] UUID:     " + cfgUuid);
   Serial.println("[INIT] Firmware: " EST_FIRMWARE);
 
   Serial.println("[DEBUG] 1 — Wire.begin...");
@@ -474,6 +546,7 @@ void setup() {
 
   // 1) BLE + espera de configuración WiFi
   Serial.println("[DEBUG] 3 — iniciarBLE...");
+  iniciarBLE();   // ← FIX 002.1: antes NUNCA se llamaba (BLE quedaba inerte)
   Serial.println("[DEBUG] 4 — esperarConfiguracionBLE...");
   bool credsPorBLE = esperarConfiguracionBLE();
 
@@ -484,6 +557,13 @@ void setup() {
   else if (strlen(WIFI_SSID) > 0) { ssid = WIFI_SSID; pass = WIFI_PASS; }
   else { ssid = leerSSID(); pass = leerPass(); }
 
+  // Si el paquete BLE trajo identidad completa (002.1), adóptala para el handshake.
+  if (configCompletaPorBLE) {
+    cfgUuid = nuevoUuid;
+    cfgToken = nuevoToken;
+    if (!nuevaUrl.isEmpty()) cfgUrl = nuevaUrl;
+  }
+
   // 3) Conectar a WiFi
   Serial.println("[DEBUG] 6 — conectarWifi...");
   bool wifiOK = false;
@@ -493,20 +573,24 @@ void setup() {
   // 4) Si WiFi OK: guardar, apagar BLE, NTP, handshake con el backend
   Serial.println("[DEBUG] 7 — post-WiFi...");
   if (wifiOK) {
-    if (credsPorBLE) guardarWifi(ssid, pass);
-    delay(800);
-    Serial.println("[DEBUG] 8 — apagarBLE...");
-    apagarBLE();
+    // Persistir la config recibida (WiFi + identidad si vino por CONFIG).
+    if (credsPorBLE) guardarConfig(ssid, pass, cfgUuid, cfgToken, cfgUrl);
     Serial.println("[DEBUG] 9 — configTime...");
     configTime(-6*3600, 0, "pool.ntp.org");
     Serial.println("[DEBUG] 10 — esperarNTP...");
     esperarNTP(10000);
+    // Handshake ANTES de apagar BLE, para poder reportar AUTH_OK/AUTH_FAIL a la app.
     Serial.println("[DEBUG] 11 — obtenerDeviceToken...");
     obtenerDeviceToken();   // primer handshake (si falla, se reintenta al enviar)
+    publicarEstado(authStatus.isEmpty() ? "AUTH_FAIL:NET" : authStatus);  // 002.1: éxito real
+    delay(1200);            // deja que salga la notificación BLE antes de apagar
+    Serial.println("[DEBUG] 8 — apagarBLE...");
+    apagarBLE();
   } else {
     Serial.println("[Setup] WiFi falló. BLE sigue activo.");
     publicarEstado("WIFI_FAIL");
     credencialesRecibidas = false; nuevaSSID = ""; nuevaPass = "";
+    configCompletaPorBLE = false; nuevoUuid = ""; nuevoToken = ""; nuevaUrl = "";
   }
 
   // 5) Sensores (SIN CAMBIOS)
@@ -588,7 +672,7 @@ void loop() {
   // Consola
   if (ahora - tAnteriorConsola >= INTERVALO_CONSOLA_MS) {
     Serial.printf("[%s] T:%.1fC H:%.0f%% P:%.1fhPa V:%.1fkm/h Dir:%s Lluv:%.1fmm WiFi:%s Auth:%s\n",
-      EST_UUID, temp, humedad, presion, velocidadViento, dir.c_str(), lluviaAcumulada,
+      cfgUuid.c_str(), temp, humedad, presion, velocidadViento, dir.c_str(), lluviaAcumulada,
       wifiOK ? "OK" : "NO", deviceToken.isEmpty() ? "NO" : "OK");
     tAnteriorConsola = ahora;
   }
