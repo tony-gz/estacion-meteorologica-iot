@@ -4,6 +4,7 @@ import { FondoClimaCiclo } from '../components/FondoClimaCiclo';
 import { EstadoBadge } from '../components/EstadoBadge';
 import { fmtNum, fmtFechaHora } from '../lib/format';
 import { mensajeError } from '../lib/api';
+import { Icono } from '../components/Icono';
 import type { PublicEstacion } from '../lib/types';
 
 /** Vista pública SIN cuenta: estaciones + clima actual. La IA exige iniciar sesión. */
@@ -31,7 +32,7 @@ export function PublicoPage() {
       <div className="relative mb-5 overflow-hidden rounded-xl bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-200 px-5 py-4 dark:from-sky-950/40 dark:to-indigo-950/40 dark:border-sky-800">
         <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-sky-400 to-indigo-500" />
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 text-lg shrink-0">🌤️</span>
+          <Icono nombre="🌤️" size={22} className="mt-0.5 shrink-0 text-sky-500 dark:text-sky-400" />
           <div>
             <p className="text-sm text-slate-700 dark:text-slate-200">
               Datos en vivo de la red, sin necesidad de cuenta.
@@ -96,8 +97,8 @@ function CardPublica({ e }: { e: PublicEstacion }) {
 
 function Resumen({ icono, label, valor }: { icono: string; label: string; valor: string }) {
   return (
-    <div className="rounded-xl bg-white border border-slate-200 p-4 text-center dark:bg-slate-800 dark:border-slate-700">
-      <div className="text-2xl" aria-hidden>{icono}</div>
+    <div className="rounded-xl bg-white border border-slate-200 p-4 text-center flex flex-col items-center dark:bg-slate-800 dark:border-slate-700">
+      <Icono nombre={icono} size={22} className="text-sky-600 dark:text-sky-400 mb-1" />
       <div className="font-bold text-slate-800 dark:text-slate-100">{valor}</div>
       <div className="text-xs text-slate-400">{label}</div>
     </div>
@@ -106,8 +107,8 @@ function Resumen({ icono, label, valor }: { icono: string; label: string; valor:
 
 function Dato({ icono, valor, sub }: { icono: string; valor: string; sub?: string }) {
   return (
-    <div className="rounded-lg bg-slate-50 py-2 dark:bg-slate-700/50">
-      <div className="text-lg" aria-hidden>{icono}</div>
+    <div className="rounded-lg bg-slate-50 py-2 flex flex-col items-center dark:bg-slate-700/50">
+      <Icono nombre={icono} size={18} className="text-sky-600 dark:text-sky-400" />
       <div className="font-semibold text-slate-700 text-sm dark:text-slate-100">{valor}</div>
       {sub && <div className="text-[10px] text-slate-400">{sub}</div>}
     </div>

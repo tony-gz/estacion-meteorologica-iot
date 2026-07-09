@@ -79,12 +79,12 @@ function TarjetaEstacion({ estacion }: { estacion: PublicEstacion }) {
       {l ? (
         <>
           <View style={styles.grid}>
-            <SensorCard icono="🌡️" etiqueta="Temp." valor={fmtNum(l.temperatura)} unidad="°C" />
-            <SensorCard icono="💧" etiqueta="Humedad" valor={fmtNum(l.humedad, 0)} unidad="%" />
-            <SensorCard icono="🧭" etiqueta="Presión" valor={fmtNum(l.presion, 0)} unidad="hPa" />
-            <SensorCard icono="💨" etiqueta="Viento" valor={fmtNum(l.vientoKmh)} unidad="km/h" />
-            <SensorCard icono="🌧️" etiqueta="Lluvia" valor={fmtNum(l.lluviaMm)} unidad="mm" />
-            <SensorCard icono="🧭" etiqueta="Dir." valor={l.vientoDir || '—'} />
+            <SensorCard icono="thermometer" etiqueta="Temp." valor={fmtNum(l.temperatura)} unidad="°C" />
+            <SensorCard icono="water-percent" etiqueta="Humedad" valor={fmtNum(l.humedad, 0)} unidad="%" />
+            <SensorCard icono="gauge" etiqueta="Presión" valor={fmtNum(l.presion, 0)} unidad="hPa" />
+            <SensorCard icono="weather-windy" etiqueta="Viento" valor={fmtNum(l.vientoKmh)} unidad="km/h" />
+            <SensorCard icono="weather-pouring" etiqueta="Lluvia" valor={fmtNum(l.lluviaMm)} unidad="mm" />
+            <SensorCard icono="compass-outline" etiqueta="Dir." valor={l.vientoDir || '—'} />
           </View>
           <Text style={[styles.actualizado, { color: t.textoTenue }]}>
             Actualizado: {fmtFechaHora(l.timestamp)}

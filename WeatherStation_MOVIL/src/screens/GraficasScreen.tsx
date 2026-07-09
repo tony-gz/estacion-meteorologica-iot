@@ -17,11 +17,11 @@ const RANGOS: { etiqueta: string; horas: number }[] = [
 ];
 
 const VARIABLES: { etiqueta: string; key: Variable }[] = [
-  { etiqueta: '🌡️ Temp.', key: 'temperatura' },
-  { etiqueta: '💧 Humedad', key: 'humedad' },
-  { etiqueta: '🧭 Presión', key: 'presion' },
-  { etiqueta: '💨 Viento', key: 'vientoKmh' },
-  { etiqueta: '🌧️ Lluvia', key: 'lluviaMm' },
+  { etiqueta: 'Temp.', key: 'temperatura' },
+  { etiqueta: 'Humedad', key: 'humedad' },
+  { etiqueta: 'Presión', key: 'presion' },
+  { etiqueta: 'Viento', key: 'vientoKmh' },
+  { etiqueta: 'Lluvia', key: 'lluviaMm' },
 ];
 
 // US2: histórico en gráfica (FR-008).

@@ -60,7 +60,7 @@ export function SolicitarEstacionScreen() {
           <Text style={[styles.error, { color: t.error }]}>{mensajeError(solicitar.error)}</Text>
         )}
         {solicitar.isSuccess && (
-          <Text style={[styles.ok, { color: t.online }]}>✅ Solicitud enviada. Queda pendiente de aprobación.</Text>
+          <Text style={[styles.ok, { color: t.online }]}>Solicitud enviada. Queda pendiente de aprobación.</Text>
         )}
 
         <Pressable

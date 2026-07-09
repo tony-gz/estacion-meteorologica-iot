@@ -3,6 +3,7 @@ import {
   Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useColorScheme,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { Icono } from '../components/Icono';
 import { useConexiones, useEstacion, useRegenerarToken } from '../lib/queries';
 import { mensajeError } from '../lib/api';
 import { useAuth } from '../auth/AuthContext';
@@ -74,12 +75,12 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
       {l ? (
         <>
           <View style={styles.grid}>
-            <SensorCard icono="🌡️" etiqueta="Temp." valor={fmtNum(l.temperatura)} unidad="°C" />
-            <SensorCard icono="💧" etiqueta="Humedad" valor={fmtNum(l.humedad, 0)} unidad="%" />
-            <SensorCard icono="🧭" etiqueta="Presión" valor={fmtNum(l.presion, 0)} unidad="hPa" />
-            <SensorCard icono="💨" etiqueta="Viento" valor={fmtNum(l.vientoKmh)} unidad="km/h" />
-            <SensorCard icono="🌧️" etiqueta="Lluvia" valor={fmtNum(l.lluviaMm)} unidad="mm" />
-            <SensorCard icono="🧭" etiqueta="Dir." valor={l.vientoDir || '—'} />
+            <SensorCard icono="thermometer" etiqueta="Temp." valor={fmtNum(l.temperatura)} unidad="°C" />
+            <SensorCard icono="water-percent" etiqueta="Humedad" valor={fmtNum(l.humedad, 0)} unidad="%" />
+            <SensorCard icono="gauge" etiqueta="Presión" valor={fmtNum(l.presion, 0)} unidad="hPa" />
+            <SensorCard icono="weather-windy" etiqueta="Viento" valor={fmtNum(l.vientoKmh)} unidad="km/h" />
+            <SensorCard icono="weather-pouring" etiqueta="Lluvia" valor={fmtNum(l.lluviaMm)} unidad="mm" />
+            <SensorCard icono="compass-outline" etiqueta="Dir." valor={l.vientoDir || '—'} />
           </View>
           <Text style={[styles.meta, { color: t.textoTenue }]}>Actualizado: {fmtFechaHora(l.timestamp)}</Text>
         </>
@@ -90,10 +91,11 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
       <View style={styles.acciones}>
         <Pressable
           onPress={() => navigation.navigate('Graficas', { id, nombre: data.nombre })}
-          style={[styles.boton, { backgroundColor: t.primario }]}
+          style={[styles.boton, styles.botonRow, { backgroundColor: t.primario }]}
           accessibilityRole="button"
         >
-          <Text style={styles.botonTexto}>📈 Ver histórico</Text>
+          <Icono nombre="chart-line" size={18} color="#fff" />
+          <Text style={styles.botonTexto}>Ver histórico</Text>
         </Pressable>
       </View>
 
@@ -113,9 +115,12 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
           {tokenRevelado ? (
             <View style={[styles.tokenBox, { borderColor: t.primario }]}>
               <Text style={[styles.credValor, { color: t.texto }]} selectable>{tokenRevelado}</Text>
-              <Text style={[styles.credNota, { color: t.error }]}>
-                ⚠️ Cópialo ahora: no se volverá a mostrar.
-              </Text>
+              <View style={styles.credAviso}>
+                <Icono nombre="alert" size={14} color={t.error} />
+                <Text style={[styles.credNota, { color: t.error, flex: 1 }]}>
+                  Cópialo ahora: no se volverá a mostrar.
+                </Text>
+              </View>
               <Pressable onPress={() => Clipboard.setStringAsync(tokenRevelado)} accessibilityRole="button" hitSlop={8}>
                 <Text style={[styles.credAccion, { color: t.primario }]}>Copiar token</Text>
               </Pressable>
@@ -133,11 +138,12 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
               <Pressable
                 onPress={confirmarRegenerar}
                 disabled={regenerar.isPending}
-                style={[styles.botonSec, { borderColor: t.primario, opacity: regenerar.isPending ? 0.5 : 1 }]}
+                style={[styles.botonSec, styles.botonRow, { borderColor: t.primario, opacity: regenerar.isPending ? 0.5 : 1 }]}
                 accessibilityRole="button"
               >
+                <Icono nombre="refresh" size={16} color={t.primario} />
                 <Text style={[styles.botonSecTexto, { color: t.primario }]}>
-                  {regenerar.isPending ? 'Regenerando…' : '♻️ Regenerar token'}
+                  {regenerar.isPending ? 'Regenerando…' : 'Regenerar token'}
                 </Text>
               </Pressable>
             )}
@@ -145,10 +151,11 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
               onPress={() => navigation.navigate('ConfigWifiBLE', {
                 uuid: id, nombre: data.nombre, token: tokenRevelado ?? undefined,
               })}
-              style={[styles.boton, { backgroundColor: t.primario, flex: 1 }]}
+              style={[styles.boton, styles.botonRow, { backgroundColor: t.primario, flex: 1 }]}
               accessibilityRole="button"
             >
-              <Text style={styles.botonTexto}>📶 Provisionar por BLE</Text>
+              <Icono nombre="bluetooth" size={18} color="#fff" />
+              <Text style={styles.botonTexto}>Provisionar por BLE</Text>
             </Pressable>
           </View>
         </View>
@@ -186,7 +193,9 @@ const styles = StyleSheet.create({
   sinLectura: { fontSize: 13, fontStyle: 'italic', marginTop: 6 },
   acciones: { marginTop: 12 },
   boton: { borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  botonRow: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  credAviso: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   conexiones: { marginTop: 16, gap: 6 },
   seccion: { fontSize: 17, fontWeight: '700' },
   credenciales: { marginTop: 16, gap: 6, borderWidth: 1, borderRadius: 14, padding: 14 },

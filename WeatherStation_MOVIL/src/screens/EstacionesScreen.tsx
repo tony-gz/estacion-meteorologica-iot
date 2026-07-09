@@ -1,6 +1,7 @@
 import {
   FlatList, Pressable, RefreshControl, StyleSheet, Text, View, useColorScheme,
 } from 'react-native';
+import { Icono } from '../components/Icono';
 import { useNavigation } from '@react-navigation/native';
 import { useEstaciones } from '../lib/queries';
 import { mensajeError } from '../lib/api';
@@ -38,14 +39,16 @@ export function EstacionesScreen() {
               style={[styles.bleBtn, { borderColor: t.primario }]}
               accessibilityRole="button"
             >
-              <Text style={[styles.bleTexto, { color: t.primario }]}>➕ Solicitar alta de estación</Text>
+              <Icono nombre="plus-circle-outline" size={18} color={t.primario} />
+              <Text style={[styles.bleTexto, { color: t.primario }]}>Solicitar alta de estación</Text>
             </Pressable>
             <Pressable
               onPress={() => navigation.navigate('ConfigWifiBLE')}
               style={[styles.bleBtn, { borderColor: t.primario }]}
               accessibilityRole="button"
             >
-              <Text style={[styles.bleTexto, { color: t.primario }]}>📶 Configurar WiFi de una estación (BLE)</Text>
+              <Icono nombre="bluetooth" size={18} color={t.primario} />
+              <Text style={[styles.bleTexto, { color: t.primario }]}>Configurar WiFi de una estación (BLE)</Text>
             </Pressable>
           </View>
         ) : null
@@ -79,7 +82,7 @@ export function EstacionesScreen() {
 const styles = StyleSheet.create({
   lista: { padding: 16, gap: 12 },
   vacio: { textAlign: 'center', marginTop: 40 },
-  bleBtn: { borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 12, padding: 14, alignItems: 'center' },
+  bleBtn: { borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 12, padding: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   bleTexto: { fontSize: 14, fontWeight: '700' },
   card: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 4 },
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },

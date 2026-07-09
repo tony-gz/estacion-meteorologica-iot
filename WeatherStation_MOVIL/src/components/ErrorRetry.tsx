@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Icono } from './Icono';
 import { usarTema } from '../theme/theme';
 
 interface Props {
@@ -11,7 +12,7 @@ export function ErrorRetry({ mensaje, onReintentar }: Props) {
   const t = usarTema(useColorScheme());
   return (
     <View style={[styles.contenedor, { backgroundColor: t.fondo }]}>
-      <Text style={[styles.emoji]}>⚠️</Text>
+      <Icono nombre="alert-circle-outline" size={40} color={t.textoTenue} />
       <Text style={[styles.mensaje, { color: t.texto }]}>{mensaje}</Text>
       {onReintentar && (
         <Pressable

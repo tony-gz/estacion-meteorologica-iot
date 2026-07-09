@@ -4,6 +4,7 @@ import {
   StyleSheet, Text, TextInput, View, useColorScheme,
 } from 'react-native';
 import type { Device } from 'react-native-ble-plx';
+import { Icono, type NombreIcono } from '../components/Icono';
 import { usarTema } from '../theme/theme';
 import { solicitarPermisosBLE, abrirAjustes } from './permissions';
 import { bleDisponible, escanearMeteo, estadoBluetooth, State } from './bleManager';
@@ -128,7 +129,7 @@ export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
     return (
       <Aviso
         t={t}
-        emoji="🧩"
+        icono="puzzle-outline"
         titulo="Bluetooth no disponible aquí"
         texto="La configuración por BLE requiere el build nativo de la app (no funciona en Expo Go). Compílala con «npm run android» e instálala por cable."
         accion="Reintentar"
@@ -140,7 +141,7 @@ export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
     return (
       <Aviso
         t={t}
-        emoji="🔒"
+        icono="lock"
         titulo="Permiso de Bluetooth requerido"
         texto="La app necesita permisos de Bluetooth para descubrir y configurar la estación."
         accion={denegadoPerm ? 'Abrir ajustes' : 'Conceder permiso'}
@@ -150,7 +151,7 @@ export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
   }
   if (btApagado) {
     return (
-      <Aviso t={t} emoji="📶" titulo="Bluetooth apagado"
+      <Aviso t={t} icono="bluetooth" titulo="Bluetooth apagado"
         texto="Enciende el Bluetooth del teléfono para buscar la estación."
         accion="Reintentar" onAccion={iniciar} />
     );
@@ -172,7 +173,7 @@ export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
 
           <View style={[styles.aviso2, { borderColor: t.borde }]}>
             <Text style={[styles.avisoTexto, { color: t.textoTenue }]}>
-              🔒 Provisiona en un entorno de confianza: el token viaja por Bluetooth de corto
+              Provisiona en un entorno de confianza: el token viaja por Bluetooth de corto
               alcance. Si sospechas que se filtró, un ADMIN puede regenerarlo.
             </Text>
           </View>
@@ -306,13 +307,13 @@ export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
   );
 }
 
-function Aviso({ t, emoji, titulo, texto, accion, onAccion }: {
-  t: ReturnType<typeof usarTema>; emoji: string; titulo: string; texto: string;
-  accion: string; onAccion: () => void;
+function Aviso({ t, icono, titulo, texto, accion, onAccion }: {
+  t: ReturnType<typeof usarTema>; icono: NombreIcono;
+  titulo: string; texto: string; accion: string; onAccion: () => void;
 }) {
   return (
     <View style={[styles.aviso, { backgroundColor: t.fondo }]}>
-      <Text style={{ fontSize: 44 }}>{emoji}</Text>
+      <Icono nombre={icono} size={48} color={t.textoTenue} />
       <Text style={[styles.titulo, { color: t.texto, textAlign: 'center' }]}>{titulo}</Text>
       <Text style={[styles.sub, { color: t.textoTenue, textAlign: 'center' }]}>{texto}</Text>
       <Pressable onPress={onAccion} style={[styles.boton, { backgroundColor: t.primario, alignSelf: 'stretch' }]} accessibilityRole="button">

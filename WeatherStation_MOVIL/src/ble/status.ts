@@ -55,7 +55,7 @@ export function parseStatus(crudo: string, opts: OpcionesParse = {}): EstadoBLE 
     case 'BAD_CONFIG':
       return base('ERROR', 'La estación rechazó la configuración (paquete inválido). Reintenta.', true);
     case 'AUTH_OK':
-      return base('CONECTADO', 'Estación en línea ✅ (autenticada)', true, true);
+      return base('CONECTADO', 'Estación en línea (autenticada)', true, true);
     case 'AUTH_FAIL':
       return base('ERROR', mensajeAuthFail(detalle), true);
 
@@ -70,7 +70,7 @@ export function parseStatus(crudo: string, opts: OpcionesParse = {}): EstadoBLE 
       // En el flujo completo, WiFi OK es progreso (falta autenticar); en el legado, éxito.
       return esperaAuth
         ? base('AUTENTICANDO', detalle ? `WiFi conectada (${detalle}), autenticando…` : 'WiFi conectada, autenticando…')
-        : base('CONECTADO', detalle ? `Conectada ✅ (${detalle})` : 'Conectada ✅', true, true);
+        : base('CONECTADO', detalle ? `Conectada (${detalle})` : 'Conectada', true, true);
     case 'NO_AP':
     case 'NO_SSID_AVAIL':
       return base('ERROR', 'Red WiFi no encontrada.', true);

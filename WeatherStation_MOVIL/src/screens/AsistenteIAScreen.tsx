@@ -78,7 +78,7 @@ export function AsistenteIAScreen() {
             <Text style={[styles.respuestaTexto, { color: t.texto }]}>{preguntar.data.respuesta}</Text>
             {preguntar.data.advertencias?.length > 0 && (
               <Text style={[styles.adv, { color: t.textoTenue }]}>
-                ⚠️ {preguntar.data.advertencias.join(' · ')}
+                {preguntar.data.advertencias.join(' · ')}
               </Text>
             )}
             <Text style={[styles.adv, { color: t.textoTenue }]}>

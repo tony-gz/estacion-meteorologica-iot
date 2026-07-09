@@ -1,5 +1,6 @@
 import { Pressable, Text, useColorScheme } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Icono, type NombreIcono } from '../components/Icono';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthContext';
 import { usarTema } from '../theme/theme';
@@ -11,8 +12,9 @@ import type { RootNav, TabParamList } from './types';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
-function icono(emoji: string) {
-  return () => <Text style={{ fontSize: 18 }}>{emoji}</Text>;
+function icono(name: NombreIcono) {
+  return ({ color, size }: { color: string; size: number }) =>
+    <Icono nombre={name} size={size ?? 22} color={color} />;
 }
 
 export function Tabs() {
@@ -51,24 +53,24 @@ export function Tabs() {
       <Tab.Screen
         name="Clima"
         component={PublicoScreen}
-        options={{ title: usuario ? `Hola, ${usuario.nombre.split(' ')[0]}` : 'CLIMBOT', tabBarLabel: 'Clima', tabBarIcon: icono('🌤️') }}
+        options={{ title: usuario ? `Hola, ${usuario.nombre.split(' ')[0]}` : 'CLIMBOT', tabBarLabel: 'Clima', tabBarIcon: icono('weather-partly-cloudy') }}
       />
       {autenticado && (
         <>
           <Tab.Screen
             name="Estaciones"
             component={EstacionesScreen}
-            options={{ title: 'Estaciones', tabBarIcon: icono('📡') }}
+            options={{ title: 'Estaciones', tabBarIcon: icono('radio-tower') }}
           />
           <Tab.Screen
             name="Alertas"
             component={AlertasScreen}
-            options={{ title: 'Alertas', tabBarIcon: icono('⚠️') }}
+            options={{ title: 'Alertas', tabBarIcon: icono('alert') }}
           />
           <Tab.Screen
             name="IA"
             component={AsistenteIAScreen}
-            options={{ title: 'Asistente IA', tabBarIcon: icono('🤖') }}
+            options={{ title: 'Asistente IA', tabBarIcon: icono('robot-outline') }}
           />
         </>
       )}

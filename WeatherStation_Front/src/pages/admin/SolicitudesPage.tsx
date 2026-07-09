@@ -6,6 +6,7 @@ import {
 import { mensajeError } from '../../lib/api';
 import { Modal } from '../../components/Modal';
 import { fmtFechaHora } from '../../lib/format';
+import { Icono } from '../../components/Icono';
 import type { StationToken } from '../../lib/types';
 
 const ESTADO_COLOR: Record<string, string> = {
@@ -78,8 +79,8 @@ export function SolicitudesPage() {
 
       {token && (
         <Modal abierto onCerrar={() => setToken(null)} titulo="Estación creada — Token y UUID">
-          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900">
-            ⚠ {token.aviso}
+          <p className="flex items-center gap-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900">
+            <Icono nombre="⚠" size={15} className="shrink-0" /> {token.aviso}
           </p>
           <div className="space-y-3">
             <div>
