@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import {
-  useUsuarios, useCrearUsuario, useActualizarUsuario, useEliminarUsuario,
+  useUsuarios, useCrearUsuario, useActualizarUsuario, useEliminarUsuario, useEscuelas,
 } from '../../lib/adminQueries';
 import { mensajeError } from '../../lib/api';
 import { fmtFechaHora } from '../../lib/format';
 import { Modal } from '../../components/Modal';
-import type { Rol, Usuario } from '../../lib/types';
+import type { Escuela, Rol, Usuario } from '../../lib/types';
 
-const ROLES: Rol[] = ['ADMIN', 'INVESTIGADOR', 'USUARIO'];
+const ROLES: Rol[] = ['ADMIN', 'RESPONSABLE', 'INVESTIGADOR', 'USUARIO'];
 
 export function UsuariosPage() {
   const [page, setPage] = useState(0);
@@ -83,14 +83,19 @@ export function UsuariosPage() {
 
 function CrearModal({ onCerrar }: { onCerrar: () => void }) {
   const crear = useCrearUsuario();
+  const escuelas = useEscuelas();
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rol, setRol] = useState<Rol>('USUARIO');
+  const [escuelaId, setEscuelaId] = useState('');
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    crear.mutate({ nombre, email, password, rol }, { onSuccess: onCerrar });
+    crear.mutate(
+      { nombre, email, password, rol, escuelaId: rol === 'RESPONSABLE' ? escuelaId : undefined },
+      { onSuccess: onCerrar },
+    );
   }
 
   return (
@@ -100,6 +105,9 @@ function CrearModal({ onCerrar }: { onCerrar: () => void }) {
         <Input label="Email" type="email" value={email} onChange={setEmail} required />
         <Input label="Contraseña" type="password" value={password} onChange={setPassword} required minLength={8} />
         <SelectRol value={rol} onChange={setRol} />
+        {rol === 'RESPONSABLE' && (
+          <SelectEscuela escuelas={escuelas.data} value={escuelaId} onChange={setEscuelaId} />
+        )}
         {crear.isError && <Err msg={mensajeError(crear.error)} />}
         <Acciones cargando={crear.isPending} onCerrar={onCerrar} />
       </form>
@@ -109,16 +117,22 @@ function CrearModal({ onCerrar }: { onCerrar: () => void }) {
 
 function EditarModal({ usuario, onCerrar }: { usuario: Usuario; onCerrar: () => void }) {
   const actualizar = useActualizarUsuario();
+  const escuelas = useEscuelas();
   const [nombre, setNombre] = useState(usuario.nombre);
   const [email, setEmail] = useState(usuario.email);
   const [rol, setRol] = useState<Rol>(usuario.rol);
+  const [escuelaId, setEscuelaId] = useState(usuario.escuelaId ?? '');
   const [activo, setActivo] = useState(usuario.activo);
   const [password, setPassword] = useState('');
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     actualizar.mutate(
-      { id: usuario.id, input: { nombre, email, rol, activo, password: password || undefined } },
+      { id: usuario.id, input: {
+        nombre, email, rol, activo,
+        escuelaId: rol === 'RESPONSABLE' ? escuelaId : undefined,
+        password: password || undefined,
+      } },
       { onSuccess: onCerrar },
     );
   }
@@ -129,6 +143,9 @@ function EditarModal({ usuario, onCerrar }: { usuario: Usuario; onCerrar: () => 
         <Input label="Nombre" value={nombre} onChange={setNombre} minLength={2} />
         <Input label="Email" type="email" value={email} onChange={setEmail} />
         <SelectRol value={rol} onChange={setRol} />
+        {rol === 'RESPONSABLE' && (
+          <SelectEscuela escuelas={escuelas.data} value={escuelaId} onChange={setEscuelaId} />
+        )}
         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
           <input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} />
           Activo
@@ -152,6 +169,7 @@ function Td({ children, className = '' }: { children: React.ReactNode; className
 }
 function RolBadge({ rol }: { rol: Rol }) {
   const c = rol === 'ADMIN' ? 'bg-rose-100 text-rose-700'
+    : rol === 'RESPONSABLE' ? 'bg-amber-100 text-amber-700'
     : rol === 'INVESTIGADOR' ? 'bg-indigo-100 text-indigo-700'
     : 'bg-slate-100 text-slate-600';
   return <span className={`text-xs px-2 py-0.5 rounded-full ${c}`}>{rol}</span>;
@@ -177,6 +195,25 @@ function SelectRol({ value, onChange }: { value: Rol; onChange: (r: Rol) => void
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100">
         {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
       </select>
+    </label>
+  );
+}
+function SelectEscuela({ escuelas, value, onChange }: {
+  escuelas: Escuela[] | undefined; value: string; onChange: (id: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-sm font-medium text-slate-700 mb-1 dark:text-slate-300">
+        Escuela <span className="text-rose-600">*</span>
+      </span>
+      <select required value={value} onChange={(e) => onChange(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100">
+        <option value="">Selecciona una escuela…</option>
+        {escuelas?.map((es) => <option key={es.id} value={es.id}>{es.nombre}</option>)}
+      </select>
+      <span className="block text-xs text-slate-400 mt-1">
+        Un RESPONSABLE debe estar asociado a una escuela.
+      </span>
     </label>
   );
 }
