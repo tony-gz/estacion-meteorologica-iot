@@ -37,3 +37,42 @@ describe('parseStatus (contrato BLE del firmware ESP32)', () => {
     expect(parseStatus('ALGO_RARO').fase).toBe('IDLE');
   });
 });
+
+describe('parseStatus — provisioning completo (002.1)', () => {
+  it('CONFIG_OK es progreso no terminal', () => {
+    expect(parseStatus('CONFIG_OK')).toMatchObject({ fase: 'CONFIG_OK', terminal: false });
+  });
+
+  it('BAD_CONFIG es error terminal (permite reintentar)', () => {
+    expect(parseStatus('BAD_CONFIG')).toMatchObject({ fase: 'ERROR', terminal: true, exito: false });
+  });
+
+  it('AUTH_OK es el éxito terminal real', () => {
+    expect(parseStatus('AUTH_OK')).toMatchObject({ fase: 'CONECTADO', terminal: true, exito: true });
+  });
+
+  it('AUTH_FAIL:{code} mapea cada código a un mensaje distinto y es terminal', () => {
+    const c401 = parseStatus('AUTH_FAIL:401');
+    const cNet = parseStatus('AUTH_FAIL:NET');
+    const cTo = parseStatus('AUTH_FAIL:TIMEOUT');
+    for (const e of [c401, cNet, cTo]) {
+      expect(e.fase).toBe('ERROR');
+      expect(e.terminal).toBe(true);
+      expect(e.exito).toBe(false);
+    }
+    expect(c401.mensaje).not.toBe(cNet.mensaje);
+    expect(cNet.mensaje).not.toBe(cTo.mensaje);
+    expect(c401.mensaje.toLowerCase()).toContain('token');
+  });
+
+  it('WIFI_OK es solo progreso cuando esperaAuth=true (falta autenticar)', () => {
+    const e = parseStatus('WIFI_OK:192.168.1.5', { esperaAuth: true });
+    expect(e.fase).toBe('AUTENTICANDO');
+    expect(e.terminal).toBe(false);
+    expect(e.exito).toBe(false);
+  });
+
+  it('WIFI_OK sigue siendo éxito terminal en el flujo legado (esperaAuth=false)', () => {
+    expect(parseStatus('WIFI_OK:10.0.0.2')).toMatchObject({ terminal: true, exito: true });
+  });
+});

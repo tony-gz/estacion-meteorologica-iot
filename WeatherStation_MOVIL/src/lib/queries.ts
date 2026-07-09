@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import type {
   Alerta, Conexion, Estacion, Estadisticas, IaResponse, Lectura,
-  PublicEstacion, PublicEstadistica, SolicitarEstacionInput, Solicitud,
+  PublicEstacion, PublicEstadistica, SolicitarEstacionInput, Solicitud, StationToken,
 } from './types';
 
 // Rutas verbatim del openapi (spec 001). baseURL = origen del backend.
@@ -133,6 +133,36 @@ export function useSolicitarEstacion() {
   return useMutation({
     mutationFn: async (input: SolicitarEstacionInput) =>
       (await api.post<Solicitud>('/solicitudes', input)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mis-solicitudes'] }),
+  });
+}
+
+// ── Credenciales de estación (002.1 — solo ADMIN) ───────────────────────────
+
+/**
+ * POST /estaciones/{uuid}/regenerar-token → nuevo token en claro (una sola vez).
+ * Solo ADMIN (FR-024). El backend guarda solo el hash; **invalida** el token anterior,
+ * así que la estación debe re-provisionarse. El token NO se cachea (FR-023).
+ */
+export function useRegenerarToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (uuid: string) =>
+      (await api.post<StationToken>(`/estaciones/${uuid}/regenerar-token`)).data,
+    onSuccess: (_data, uuid) => qc.invalidateQueries({ queryKey: ['estacion', uuid] }),
+  });
+}
+
+/**
+ * POST /solicitudes/{id}/aprobar → aprueba y devuelve el token en claro (una sola vez).
+ * Solo ADMIN. Disponible para un futuro flujo de aprobación en la app; hoy la aprobación
+ * se hace en la Web. El token NO se cachea (FR-023).
+ */
+export function useAprobarSolicitud() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post<StationToken>(`/solicitudes/${id}/aprobar`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['mis-solicitudes'] }),
   });
 }

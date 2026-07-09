@@ -6,7 +6,8 @@ export type RootStackParamList = {
   Login: undefined;
   EstacionDetalle: { id: string; nombre: string };
   Graficas: { id: string; nombre: string };
-  ConfigWifiBLE: undefined;
+  // Provisioning: opcionalmente precargado con la estación objetivo (002.1).
+  ConfigWifiBLE: { uuid?: string; nombre?: string; token?: string } | undefined;
   SolicitarEstacion: undefined;
 };
 

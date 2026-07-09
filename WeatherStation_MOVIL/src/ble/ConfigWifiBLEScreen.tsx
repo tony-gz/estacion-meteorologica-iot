@@ -7,14 +7,27 @@ import type { Device } from 'react-native-ble-plx';
 import { usarTema } from '../theme/theme';
 import { solicitarPermisosBLE, abrirAjustes } from './permissions';
 import { bleDisponible, escanearMeteo, estadoBluetooth, State } from './bleManager';
-import { provisionar, desconectar } from './provisioning';
+import { provisionCompleto, desconectar } from './provisioning';
 import type { EstadoBLE } from './status';
+import type { PantallaProps } from '../navigation/types';
 
 const DURACION_ESCANEO_MS = 15_000;
+const URL_BACKEND_DEFAULT = 'https://weatherstation-backend.onrender.com';
 
-// US3: configurar el WiFi de la estación por BLE (FR-015..019).
-export function ConfigWifiBLEScreen() {
+/** Extrae el UUID del nombre anunciado `Meteo-{uuid}`. */
+function uuidDeNombre(nombre?: string | null): string {
+  return (nombre ?? '').replace(/^Meteo-/i, '').trim();
+}
+
+/** Valida que la URL sea http(s) y con formato razonable. */
+function urlValida(u: string): boolean {
+  return /^https?:\/\/[^\s]+$/i.test(u.trim());
+}
+
+// US3/US5: provisioning de la estación por BLE (FR-015..019, FR-016, FR-025, FR-026).
+export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
   const t = usarTema(useColorScheme());
+  const params = route.params ?? {};
 
   const [soportado, setSoportado] = useState(true);
   const [permisoOk, setPermisoOk] = useState<boolean | null>(null);
@@ -23,6 +36,9 @@ export function ConfigWifiBLEScreen() {
   const [dispositivos, setDispositivos] = useState<Device[]>([]);
   const [escaneando, setEscaneando] = useState(false);
   const [sel, setSel] = useState<Device | null>(null);
+  const [uuidEst, setUuidEst] = useState(params.uuid ?? '');
+  const [token, setToken] = useState(params.token ?? '');
+  const [url, setUrl] = useState(URL_BACKEND_DEFAULT);
   const [ssid, setSsid] = useState('');
   const [password, setPassword] = useState('');
   const [estado, setEstado] = useState<EstadoBLE | null>(null);
@@ -77,17 +93,23 @@ export function ConfigWifiBLEScreen() {
   // Desconecta el dispositivo seleccionado al cambiar de selección o al desmontar (FR-036).
   useEffect(() => () => { if (sel) desconectar(sel.id); }, [sel]);
 
+  const puedeEnviar = !!sel && !!uuidEst.trim() && !!token.trim()
+    && !!ssid.trim() && !!password && urlValida(url);
+
   async function onEnviar() {
-    if (!sel || !ssid.trim() || !password) return;
+    if (!sel || !puedeEnviar) return;
     detenerEscaneo();
     setEnviando(true);
     setEstado(null);
     setErrorMsg(null);
     try {
-      const final = await provisionar({
+      const final = await provisionCompleto({
         deviceId: sel.id,
+        uuid: uuidEst.trim(),
+        token: token.trim(),
         ssid: ssid.trim(),
         password,
+        url: url.trim(),
         onEstado: setEstado,
       });
       setEstado(final);
@@ -95,7 +117,9 @@ export function ConfigWifiBLEScreen() {
       setErrorMsg(e instanceof Error ? e.message : 'Error de conexión BLE.');
     } finally {
       setEnviando(false);
-      setPassword(''); // no retener la contraseña en memoria más de lo necesario
+      // No retener secretos en memoria más de lo necesario (FR-019).
+      setPassword('');
+      setToken('');
     }
   }
 
@@ -142,8 +166,40 @@ export function ConfigWifiBLEScreen() {
       >
         <ScrollView contentContainerStyle={styles.cont} keyboardShouldPersistTaps="handled">
           <Text style={[styles.titulo, { color: t.texto }]}>{sel.name}</Text>
-          <Text style={[styles.sub, { color: t.textoTenue }]}>Configura la red WiFi de esta estación.</Text>
+          <Text style={[styles.sub, { color: t.textoTenue }]}>
+            Envía en un paquete la identidad de la estación y el WiFi.
+          </Text>
 
+          <View style={[styles.aviso2, { borderColor: t.borde }]}>
+            <Text style={[styles.avisoTexto, { color: t.textoTenue }]}>
+              🔒 Provisiona en un entorno de confianza: el token viaja por Bluetooth de corto
+              alcance. Si sospechas que se filtró, un ADMIN puede regenerarlo.
+            </Text>
+          </View>
+
+          <Text style={[styles.etiqueta, { color: t.textoTenue }]}>UUID de la estación</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: t.superficie, borderColor: t.borde, color: t.texto }]}
+            placeholder="uuid de la estación"
+            placeholderTextColor={t.textoTenue}
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={uuidEst}
+            onChangeText={setUuidEst}
+            editable={!enviando}
+          />
+          <Text style={[styles.etiqueta, { color: t.textoTenue }]}>Token de acceso (del correo)</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: t.superficie, borderColor: t.borde, color: t.texto }]}
+            placeholder="stk_… (pégalo aquí)"
+            placeholderTextColor={t.textoTenue}
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={token}
+            onChangeText={setToken}
+            editable={!enviando}
+          />
+          <Text style={[styles.etiqueta, { color: t.textoTenue }]}>Red WiFi</Text>
           <TextInput
             style={[styles.input, { backgroundColor: t.superficie, borderColor: t.borde, color: t.texto }]}
             placeholder="Nombre de la red (SSID)"
@@ -162,14 +218,30 @@ export function ConfigWifiBLEScreen() {
             onChangeText={setPassword}
             editable={!enviando}
           />
+          <Text style={[styles.etiqueta, { color: t.textoTenue }]}>URL del backend</Text>
+          <TextInput
+            style={[styles.input, {
+              backgroundColor: t.superficie,
+              borderColor: url && !urlValida(url) ? t.error : t.borde,
+              color: t.texto,
+            }]}
+            placeholder="https://…"
+            placeholderTextColor={t.textoTenue}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            value={url}
+            onChangeText={setUrl}
+            editable={!enviando}
+          />
 
           <Pressable
             onPress={onEnviar}
-            disabled={enviando || !ssid.trim() || !password}
-            style={[styles.boton, { backgroundColor: t.primario, opacity: enviando || !ssid.trim() || !password ? 0.5 : 1 }]}
+            disabled={enviando || !puedeEnviar}
+            style={[styles.boton, { backgroundColor: t.primario, opacity: enviando || !puedeEnviar ? 0.5 : 1 }]}
             accessibilityRole="button"
           >
-            <Text style={styles.botonTexto}>{enviando ? 'Enviando…' : 'Enviar credenciales'}</Text>
+            <Text style={styles.botonTexto}>{enviando ? 'Enviando…' : 'Provisionar estación'}</Text>
           </Pressable>
 
           {(enviando || estado) && (
@@ -210,7 +282,7 @@ export function ConfigWifiBLEScreen() {
       {dispositivos.map((d) => (
         <Pressable
           key={d.id}
-          onPress={() => setSel(d)}
+          onPress={() => { setSel(d); if (!uuidEst) setUuidEst(uuidDeNombre(d.name)); }}
           style={[styles.item, { backgroundColor: t.superficie, borderColor: t.borde }]}
           accessibilityRole="button"
         >
@@ -258,6 +330,9 @@ const styles = StyleSheet.create({
   filaEscaneo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   item: { borderWidth: 1, borderRadius: 12, padding: 14, gap: 2 },
   itemNombre: { fontSize: 15, fontWeight: '700' },
+  aviso2: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 10, padding: 10 },
+  avisoTexto: { fontSize: 12.5, lineHeight: 17 },
+  etiqueta: { fontSize: 12, fontWeight: '600', marginTop: 2 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16 },
   boton: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '700' },

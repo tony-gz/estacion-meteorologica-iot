@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import {
-  Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useColorScheme,
+  Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useColorScheme,
 } from 'react-native';
-import { useConexiones, useEstacion } from '../lib/queries';
+import * as Clipboard from 'expo-clipboard';
+import { useConexiones, useEstacion, useRegenerarToken } from '../lib/queries';
 import { mensajeError } from '../lib/api';
 import { useAuth } from '../auth/AuthContext';
 import { usarTema } from '../theme/theme';
@@ -16,10 +18,36 @@ import type { PantallaProps } from '../navigation/types';
 export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'EstacionDetalle'>) {
   const { id, nombre } = route.params;
   const t = usarTema(useColorScheme());
-  const { tieneRol } = useAuth();
+  const { tieneRol, esAdmin } = useAuth();
   const verConexiones = tieneRol('RESPONSABLE', 'ADMIN');
+  const puedeProvisionar = tieneRol('RESPONSABLE', 'ADMIN');
   const { data, isPending, isError, error, refetch, isRefetching } = useEstacion(id);
   const conexiones = useConexiones(id, verConexiones);
+  const regenerar = useRegenerarToken();
+  const [tokenRevelado, setTokenRevelado] = useState<string | null>(null);
+
+  const copiarUuid = async () => {
+    await Clipboard.setStringAsync(id);
+    Alert.alert('UUID copiado', 'El UUID de la estación se copió al portapapeles.');
+  };
+
+  const confirmarRegenerar = () => {
+    Alert.alert(
+      'Regenerar token',
+      'Se generará un token nuevo y el anterior quedará invalidado: la estación deberá re-provisionarse. ¿Continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Regenerar',
+          style: 'destructive',
+          onPress: () => regenerar.mutate(id, {
+            onSuccess: (st) => setTokenRevelado(st.token),
+            onError: (e) => Alert.alert('No se pudo regenerar', mensajeError(e)),
+          }),
+        },
+      ],
+    );
+  };
 
   if (isPending) return <Loading mensaje={`Cargando ${nombre}…`} />;
   if (isError) return <ErrorRetry mensaje={mensajeError(error)} onReintentar={refetch} />;
@@ -69,6 +97,63 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
         </Pressable>
       </View>
 
+      {puedeProvisionar && (
+        <View style={[styles.credenciales, { borderColor: t.borde }]}>
+          <Text style={[styles.seccion, { color: t.texto }]}>Credenciales de la estación</Text>
+
+          <Text style={[styles.credLabel, { color: t.textoTenue }]}>UUID</Text>
+          <View style={styles.credFila}>
+            <Text style={[styles.credValor, { color: t.texto }]} selectable numberOfLines={1}>{id}</Text>
+            <Pressable onPress={copiarUuid} accessibilityRole="button" hitSlop={8}>
+              <Text style={[styles.credAccion, { color: t.primario }]}>Copiar</Text>
+            </Pressable>
+          </View>
+
+          <Text style={[styles.credLabel, { color: t.textoTenue }]}>Token de acceso</Text>
+          {tokenRevelado ? (
+            <View style={[styles.tokenBox, { borderColor: t.primario }]}>
+              <Text style={[styles.credValor, { color: t.texto }]} selectable>{tokenRevelado}</Text>
+              <Text style={[styles.credNota, { color: t.error }]}>
+                ⚠️ Cópialo ahora: no se volverá a mostrar.
+              </Text>
+              <Pressable onPress={() => Clipboard.setStringAsync(tokenRevelado)} accessibilityRole="button" hitSlop={8}>
+                <Text style={[styles.credAccion, { color: t.primario }]}>Copiar token</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Text style={[styles.credNota, { color: t.textoTenue }]}>
+              Por seguridad el token no se puede recuperar. {esAdmin
+                ? 'Regenéralo si lo necesitas (invalida el anterior).'
+                : 'Búscalo en el correo, o pide a un ADMIN que lo regenere.'}
+            </Text>
+          )}
+
+          <View style={styles.credBotones}>
+            {esAdmin && (
+              <Pressable
+                onPress={confirmarRegenerar}
+                disabled={regenerar.isPending}
+                style={[styles.botonSec, { borderColor: t.primario, opacity: regenerar.isPending ? 0.5 : 1 }]}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.botonSecTexto, { color: t.primario }]}>
+                  {regenerar.isPending ? 'Regenerando…' : '♻️ Regenerar token'}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => navigation.navigate('ConfigWifiBLE', {
+                uuid: id, nombre: data.nombre, token: tokenRevelado ?? undefined,
+              })}
+              style={[styles.boton, { backgroundColor: t.primario, flex: 1 }]}
+              accessibilityRole="button"
+            >
+              <Text style={styles.botonTexto}>📶 Provisionar por BLE</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {verConexiones && (
         <View style={styles.conexiones}>
           <Text style={[styles.seccion, { color: t.texto }]}>Conexiones recientes</Text>
@@ -104,5 +189,15 @@ const styles = StyleSheet.create({
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '700' },
   conexiones: { marginTop: 16, gap: 6 },
   seccion: { fontSize: 17, fontWeight: '700' },
+  credenciales: { marginTop: 16, gap: 6, borderWidth: 1, borderRadius: 14, padding: 14 },
+  credLabel: { fontSize: 12, fontWeight: '600', marginTop: 4 },
+  credFila: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  credValor: { fontSize: 13, flexShrink: 1, fontVariant: ['tabular-nums'] },
+  credAccion: { fontSize: 13, fontWeight: '700' },
+  credNota: { fontSize: 12.5, lineHeight: 17 },
+  tokenBox: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 10, padding: 10, gap: 6 },
+  credBotones: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  botonSec: { borderWidth: 1.5, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, alignItems: 'center' },
+  botonSecTexto: { fontSize: 14, fontWeight: '700' },
   conexion: { borderBottomWidth: 1, paddingVertical: 6, flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
 });

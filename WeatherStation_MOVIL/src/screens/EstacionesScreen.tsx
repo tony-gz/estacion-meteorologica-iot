@@ -28,7 +28,7 @@ export function EstacionesScreen() {
       style={{ backgroundColor: t.fondo }}
       contentContainerStyle={styles.lista}
       data={data}
-      keyExtractor={(e) => e.id}
+      keyExtractor={(e) => e.uuid}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={t.primario} />}
       ListHeaderComponent={
         puedeConfigurar ? (
@@ -53,7 +53,10 @@ export function EstacionesScreen() {
       ListEmptyComponent={<Text style={[styles.vacio, { color: t.textoTenue }]}>No hay estaciones.</Text>}
       renderItem={({ item }) => (
         <Pressable
-          onPress={() => navigation.navigate('EstacionDetalle', { id: item.id, nombre: item.nombre })}
+          // El backend resuelve /estaciones/{id} por UUID público (no por la PK
+          // de BD). Toda la cadena de detalle (detalle, historial, gráficas,
+          // conexiones) usa este param, así que aquí va el uuid, no item.id.
+          onPress={() => navigation.navigate('EstacionDetalle', { id: item.uuid, nombre: item.nombre })}
           style={[styles.card, { backgroundColor: t.superficie, borderColor: t.borde }]}
           accessibilityRole="button"
         >
