@@ -14,6 +14,12 @@ WiFi del ESP32 por BLE**. Stack: **React Native + Expo (development build) + EAS
 TypeScript. Tokens en **almacenamiento seguro** del dispositivo. Sin Firebase, sin push
 (pospuesto).
 
+> **Incremento 002.1 (2026-07-08)**: provisioning completo por BLE (paquete único
+> uuid+token+ssid+pass+url), sección de credenciales de estación, y fix de gobernanza de
+> roles (ascenso a RESPONSABLE). Su diseño, matriz de roles y tareas están en
+> [`plan-provisioning-completo.md`](./plan-provisioning-completo.md); afecta a US5 y a
+> FR-016/022–026. El firmware ESP32 pasa a estar **en alcance** para este incremento.
+
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x sobre React Native 0.7x (vía Expo SDK 52+)

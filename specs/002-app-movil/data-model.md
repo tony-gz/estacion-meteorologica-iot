@@ -35,26 +35,45 @@ entrega el backend; la app **no** recalcula UTC (FR-011).
 - **Estados de sesión**: `anónimo` (solo público) → `autenticado` (login OK) →
   `refrescando` (access expirado, refresh en curso) → `expirado` (refresh falla → logout).
 - **Transición de logout**: borra las tres claves de SecureStore y vuelve a `anónimo`.
-- **Gating por rol**: `RESPONSABLE` ve solicitar-alta y estado de sus estaciones;
-  `INVESTIGADOR`/`USUARIO` ven datos+IA; acciones no permitidas se ocultan (no se muestran
-  errores 403 crudos, FR-012).
+- **Gating por rol**: `RESPONSABLE`/`ADMIN` ven solicitar-alta, estado de sus estaciones,
+  **provisioning BLE** y **credenciales** (UUID siempre; token solo al generar/regenerar).
+  Regenerar token y aprobar solicitud son **solo ADMIN**. `INVESTIGADOR`/`USUARIO` ven
+  datos+IA (INVESTIGADOR además históricos de red); acciones no permitidas se ocultan (no se
+  muestran errores 403 crudos, FR-012). Ver matriz de roles en `plan-provisioning-completo.md` §7.
 
 ## 3. Provisioning BLE (efímero — nunca se persiste ni viaja al backend)
+
+**Paquete de configuración completo (002.1)** — se envía como **un JSON** en la
+característica CONFIG (ver [`contracts/ble-gatt.md`](./contracts/ble-gatt.md)):
 
 | Campo | Tipo | Notas |
 |-------|------|-------|
 | `deviceId` | string | Id BLE del periférico descubierto. |
-| `nombreAnunciado` | string | `Meteo-{EST_UUID}` (UUID completo, p. ej. `Meteo-60ce6191-...`). La app filtra por prefijo `Meteo-`. |
-| `ssid` | string | Red WiFi a la que conectará la estación. Se escribe en la característica SSID. |
-| `password` | string | Contraseña WiFi. Se escribe en la característica PASS. **No** se loguea ni se envía a la API (FR-019). |
-| `estadoConexion` | string | Notificado por STATUS. Valores reales del firmware en [`contracts/ble-gatt.md`](./contracts/ble-gatt.md): `SSID_OK`, `PASS_OK`, `CONNECTING:{ssid}`, `WIFI_OK:{ip}` (éxito), `NO_AP`, `BAD_PASSWORD`, `WIFI_FAIL`, `ERR_NO_SSID`. |
+| `nombreAnunciado` | string | `Meteo-{EST_UUID}` (UUID completo). La app filtra por prefijo `Meteo-`. |
+| `uuid` | string | UUID de la estación (prefill desde la estación elegida). |
+| `token` | string | Token de acceso. Prefill si se acaba de generar/regenerar; si no, el usuario lo **pega** (FR-025). **No** se loguea (FR-019). |
+| `ssid` | string | Red WiFi a la que conectará la estación. |
+| `password` | string | Contraseña WiFi. **No** se loguea ni se envía a la API (FR-019). |
+| `url` | string | URL del backend (prefill con la de producción; editable). Opcional. |
+| `estadoConexion` | string | Notificado por STATUS. Valores en [`contracts/ble-gatt.md`](./contracts/ble-gatt.md): `CONFIG_OK`/`BAD_CONFIG`, `CONNECTING:{ssid}`, `WIFI_OK:{ip}`, **`AUTH_OK`** (éxito real), `AUTH_FAIL:{code}`, `NO_AP`, `BAD_PASSWORD`, `WIFI_FAIL`. |
 
-- **Máquina de estados del flujo BLE**:
-  `escanear → encontrado → conectar(GATT) → descubrir servicios →
-   escribir SSID → escribir PASS → (opcional CMD "connect") →
-   observar STATUS → CONNECTED | WIFI_FAIL | timeout`.
-- **Limpieza**: al salir de la pantalla o completar, se desconecta el periférico y se
-  descartan `ssid`/`password` de memoria.
+- **Máquina de estados (002.1)**:
+  `escanear → encontrado → conectar(GATT) → MTU 512 → descubrir servicios →
+   escribir CONFIG(JSON) → CONFIG_OK → CONNECTING → WIFI_OK → AUTH_OK | (BAD_CONFIG | AUTH_FAIL | WIFI_FAIL | timeout)`.
+- **Fallback legado** (solo WiFi): `escribir SSID → PASS → APPLY → WIFI_OK`.
+- **Limpieza**: al salir o completar, se desconecta el periférico y se descartan del
+  memoria `token`/`ssid`/`password`.
+
+### Token de estación (`StationToken`) — modelo local efímero
+
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| `estacionId`/`uuid` | string | Identidad de la estación. |
+| `token` | string | En claro **solo** al aprobar/regenerar; no se persiste ni se cachea (FR-023). |
+| `generadoEn` | ISO | Marca de generación. |
+| `aviso` | string | "Guarde este token: no se volverá a mostrar." (del backend). |
+
+Fuente: `POST /solicitudes/{id}/aprobar` y `POST /estaciones/{id}/regenerar-token` (ADMIN).
 
 ## Entidades explícitamente ausentes
 

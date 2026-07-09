@@ -141,6 +141,53 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 
 ---
 
+## Phase 8: Incremento 002.1 — Provisioning completo por BLE + credenciales + fix de roles
+
+**Goal**: enviar en **un paquete BLE** uuid+token+ssid+pass+url; mostrar credenciales
+(UUID siempre, token al generar/regenerar); dejar los roles coherentes. Ver
+[`plan-provisioning-completo.md`](./plan-provisioning-completo.md) y US5.
+
+**Independent Test**: con un ESP32 real, enviar el paquete completo y ver `AUTH_OK` (WiFi +
+autenticación contra el backend); ver el UUID en la app; un ADMIN regenera el token y lo ve
+una sola vez.
+
+### 8a. Documentación / contratos (formalización SDD) — ✅ hecho
+
+- [X] T047 Actualizar `spec.md` (US5, FR-016 mod., FR-022–FR-025, actores, assumptions/scope).
+- [X] T048 Actualizar `contracts/ble-gatt.md` (característica CONFIG, MTU 512, paquete JSON, STATUS `CONFIG_OK`/`BAD_CONFIG`/`AUTH_OK`/`AUTH_FAIL`).
+- [X] T049 Actualizar `data-model.md` (paquete BLE completo + `StationToken` local) y `plan-provisioning-completo.md`.
+
+### 8b. Firmware ESP32 (`WeatherStation_ESP32/ESTACION1_ESP32_v3.txt`)
+
+- [X] T050 [FW] Arreglar el BLE inerte: **llamar `iniciarBLE()`** en `setup()` antes de esperar configuración (hoy nunca se invoca).
+- [X] T051 [FW] Negociar **MTU 512** y añadir la característica **CONFIG** (`…b26ac`, write) con callback que parsea el **JSON** (ArduinoJson), valida campos mínimos y emite `CONFIG_OK`/`BAD_CONFIG`.
+- [X] T052 [FW] Convertir `EST_UUID`/`EST_TOKEN`/`BACKEND_URL` de `#define` a **variables `String`** (cargadas de NVS, con `#define` como *fallback*) y sustituir sus usos en `obtenerDeviceToken()`, `enviarLectura()`, `enviarHeartbeat()` y logs.
+- [X] T053 [FW] Extender NVS (namespace `wifi`): `guardar/leer` de `uuid`, `token`, `url` además de ssid/pass; persistir tras provisioning exitoso.
+- [X] T054 [FW] Tras `WIFI_OK`, hacer el handshake `/api/device/auth` con las nuevas credenciales y emitir **`AUTH_OK`** o **`AUTH_FAIL:{code}`** (confirmación end-to-end).
+
+### 8c. App móvil (`WeatherStation_MOVIL/`)
+
+- [X] T055 [US5] `src/ble/provisioning.ts`: `provisionCompleto({uuid,token,ssid,pass,url})` — `requestMTU(512)`, escribir el JSON en CONFIG, observar STATUS; mantener el flujo legado como *fallback* si el MTU no sube (FR-016). **No loguear token/pass** (FR-019); si el MTU no alcanza para el paquete, caer al flujo legado.
+- [X] T056 [P] [US5] `src/ble/status.ts`: mapear `CONFIG_OK`/`BAD_CONFIG`/`AUTH_OK`/`AUTH_FAIL:{code}` (códigos `401`/`NET`/`TIMEOUT`); ajustar terminal de éxito a `AUTH_OK` y timeout ~45 s (FR-017).
+- [X] T057 [US5] Navegación: `ConfigWifiBLE` recibe `{uuid, nombre, token?}`; en `ConfigWifiBLEScreen.tsx` añadir campos **token** (pegable, FR-025) y **URL** (prefill `https://weatherstation-backend.onrender.com`, editable, **validar https/formato** — U2) + prefill de uuid. Mostrar aviso de "provisiona en un entorno de confianza" (FR-026).
+- [X] T058 [P] [US5] `src/lib/queries.ts` + `types.ts`: usar el tipo `StationToken`; `useRegenerarToken` (`POST /estaciones/{id}/regenerar-token`) y `useAprobarSolicitud` (`POST /solicitudes/{id}/aprobar`) — ambos ADMIN.
+- [X] T059 [US5] Sección **Credenciales** como **bloque dentro de `EstacionDetalleScreen`** (decidido; evita navegación extra): UUID + copiar (FR-022); token en claro solo tras generar/regenerar con aviso (FR-023); botón **Regenerar** (ADMIN, con confirmación de invalidación, FR-024); botón **Provisionar por BLE** que abre el configurador con prefill de `{uuid, token?}`.
+- [X] T060 [US5] Gating por rol: sección y provisioning para `RESPONSABLE`/`ADMIN`; **Regenerar**/**Aprobar** solo `ADMIN` (FR-012).
+- [X] T061 [P] [US5] Tests: parser de STATUS nuevos (incl. `AUTH_FAIL:{code}`) y del *fallback* legado cuando el MTU no sube en `__tests__/ble-status.test.ts`; **test que verifique que `token`/`pass` no se loguean ni se incluyen en ninguna llamada axios** (FR-019); `tsc --noEmit` + `eslint` limpios.
+
+### 8d. Backend (fix de gobernanza — spec `001`)
+
+- [ ] T062 [BE] Implementar **T-GOV1** (ascenso a RESPONSABLE + escuela en `SolicitudService.aprobar`) y **T-GOV2** (backfill). Ver `specs/001-weatherstation-backend/tasks.md`.
+
+### 8e. Validación
+
+- [ ] T063 Rebuild release del APK con la app 002.1 y **provisioning E2E** con ESP32 real hasta `AUTH_OK` (SC-004); registrar en `quickstart.md`.
+
+**Checkpoint**: una estación nueva se pone en marcha por completo desde la app (BLE) sin
+reflashear, con confirmación real de que autentica contra el backend.
+
+---
+
 ## Dependencies & Execution Order
 
 - **Setup (T001–T008)** → antes de todo.
@@ -150,14 +197,22 @@ incremental. Ruta base de la app: `WeatherStation_MOVIL/`.
 - **US3 (T031–T037)** → depende de Foundational + auth (rol). Independiente de US1/US2 en código (módulo `src/ble/`).
 - **US4 (T038–T040)** → depende de Foundational + auth. Reusa `EstacionDetalleScreen` de US2.
 - **Polish (T041–T046)** → al final.
+- **Incremento 002.1 (Phase 8)** → depende de US3 (capa BLE) + US2 (auth/rol) + US4
+  (detalle/queries). Dentro de la fase: **Firmware (T050–T054)** y **App (T055–T061)** son
+  paralelos entre sí y sincronizan en la validación E2E (T063). **Backend (T062)** es
+  independiente (spec 001) pero necesario para que el gating de RESPONSABLE tenga sentido.
+  La doc (T047–T049) ya está hecha.
 
 ### Grafo de historias
 
 ```
 Setup → Foundational → ├─ US1 (MVP)
-                       ├─ US2
-                       ├─ US3 (BLE)
-                       └─ US4  → Polish
+                       ├─ US2 ───────────────┐
+                       ├─ US3 (BLE) ─────────┤
+                       └─ US4 ───────────────┤
+                                             └─ 002.1: US5 (provisioning completo +
+                                                credenciales) + fix roles → Polish
+                       Firmware ESP32 (T050–T054) ∥ App (T055–T061) → E2E (T063)
 ```
 
 ## Parallel Execution Examples

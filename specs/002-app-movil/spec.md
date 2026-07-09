@@ -4,7 +4,9 @@
 
 **Created**: 2026-07-06
 
-**Status**: Approved (2026-07-06)
+**Status**: Approved (2026-07-06) · **Incremento 002.1** en revisión (2026-07-08):
+provisioning completo por BLE + credenciales de estación + fix de roles. Ver
+[`plan-provisioning-completo.md`](./plan-provisioning-completo.md).
 
 **Input**: App móvil de la Red de Estaciones Meteorológicas (CLIMBOT) que
 **reemplaza** la app Flutter obsoleta (`WeatherStation_MOVIL`). La app anterior
@@ -34,8 +36,8 @@ ESP32 por Bluetooth (BLE)**.
 |-------|-------------|
 | **OBSERVADOR PÚBLICO** | Usa la app **sin cuenta**. Solo lectura de estaciones aprobadas y clima actual. No IA, no históricos crudos. |
 | **USUARIO** | Persona registrada. Consulta datos actuales, históricos/gráficas y usa el asistente de IA. |
-| **RESPONSABLE** | Responsable de las estaciones de su escuela: solicita el alta de una estación, consulta su estado/última conexión y **configura su WiFi por BLE**. |
-| **INVESTIGADOR** | Consulta datos actuales e históricos de toda la red y usa la IA. |
+| **RESPONSABLE** | Responsable de las estaciones de **su escuela** (el "contribuyente" de hardware): solicita el alta, consulta estado/última conexión, **provisiona la estación por BLE** y ve sus credenciales. Al aprobarse su solicitud, un USUARIO/INVESTIGADOR pasa a este rol (ver §Gobernanza). |
+| **INVESTIGADOR** | Consumidor de **datos** de toda la red (actuales e históricos) + IA. **Sin** hardware ni provisioning; lo asigna un ADMIN. |
 | **ADMIN** | Todas las capacidades anteriores según lo que exponga el backend a su rol. |
 | **ESP32 (Estación)** | Dispositivo de campo. En arranque expone un servicio BLE para recibir credenciales WiFi. La app es su configurador. |
 
@@ -153,6 +155,43 @@ estado y su última conexión.
 
 ---
 
+### User Story 5 - Provisioning completo por BLE + credenciales de la estación (Priority: P2)
+
+Un RESPONSABLE (o ADMIN) pone en marcha una estación ESP32 nueva enviándole **en una sola
+operación por BLE** todo lo que necesita para operar: **UUID** de la estación, **token de
+acceso**, **SSID + contraseña** del WiFi y la **URL del backend**. Además, la app le permite
+**ver el UUID** de la estación en cualquier momento (respaldo si no llegó el correo) y, si
+es ADMIN, **regenerar el token** cuando haga falta.
+
+**Why this priority**: Cierra el ciclo de puesta en marcha en campo sin depender de
+reflashear el firmware por cada estación (hoy el UUID/token van hardcodeados). Extiende la
+US3 (que solo enviaba WiFi) al provisioning completo, y resuelve el respaldo de credenciales.
+Depende de la app funcionando y del firmware, por eso P2.
+
+**Independent Test**: con un ESP32 en modo de configuración, seleccionar la estación
+objetivo, enviar el paquete completo por BLE y ver que la estación **conecta al WiFi y
+autentica contra el backend** (`AUTH_OK`); comprobar que la app muestra el UUID de la
+estación y que un ADMIN puede regenerar el token viéndolo una sola vez.
+
+**Acceptance Scenarios**:
+
+1. **Given** una estación ESP32 encendida y su UUID/token conocidos por el actor, **When**
+   el RESPONSABLE/ADMIN envía el paquete BLE (uuid+token+ssid+pass+url), **Then** la
+   estación persiste la configuración, conecta al WiFi y la app muestra el estado hasta un
+   resultado terminal (`AUTH_OK` = autenticó contra el backend, o error legible).
+2. **Given** un RESPONSABLE/ADMIN autenticado, **When** abre una estación, **Then** ve su
+   **UUID** con opción de copiarlo (respaldo si no llegó el correo).
+3. **Given** un ADMIN, **When** regenera el token de una estación, **Then** la app muestra
+   el token en claro **una sola vez** con aviso de que el anterior queda **invalidado** y la
+   estación deberá re-provisionarse.
+4. **Given** un RESPONSABLE que no puede recuperar el token (por seguridad no se almacena en
+   claro), **When** va a provisionar, **Then** la app le permite **pegar** el token recibido
+   por correo.
+5. **Given** un paquete BLE malformado o incompleto, **When** el firmware lo recibe,
+   **Then** reporta `BAD_CONFIG` y la app permite reintentar.
+
+---
+
 ### Edge Cases
 
 - **Token corrupto o almacenamiento seguro no disponible**: la app trata la sesión
@@ -213,15 +252,40 @@ estado y su última conexión.
 
 - **FR-015**: La app DEBE descubrir por BLE las estaciones ESP32 que estén anunciando
   su servicio de configuración (nombre `Meteo-{estacionId}`).
-- **FR-016**: La app DEBE enviar a la estación seleccionada, por BLE, el **SSID** y la
-  **contraseña** de la red WiFi.
+- **FR-016** *(modificado en 002.1)*: La app DEBE enviar a la estación seleccionada, por
+  BLE y en **un solo paquete**, la configuración completa de operación: **UUID** de la
+  estación, **token de acceso**, **SSID + contraseña** del WiFi y la **URL del backend**.
+  (Sustituye al envío previo de solo SSID+contraseña de la US3.)
 - **FR-017**: La app DEBE observar y mostrar el **estado de conexión** que la estación
-  reporte durante y después del envío de credenciales.
+  reporte durante y después del envío de credenciales, hasta un resultado terminal:
+  `AUTH_OK` (la estación autenticó contra el backend) o un error legible.
 - **FR-018**: La app DEBE solicitar y gestionar los permisos de **Bluetooth** (y
   ubicación cuando el sistema lo exija para BLE), explicando su propósito y guiando al
   usuario si están denegados.
-- **FR-019**: La app **NO** DEBE enviar las credenciales WiFi de la estación al
-  backend; el provisioning es exclusivamente app ↔ ESP32.
+- **FR-019** *(reforzado en 002.1)*: La app **NO** DEBE enviar al backend las credenciales
+  WiFi **ni el token de acceso** de la estación, ni registrarlos en logs; el paquete de
+  provisioning es exclusivamente app ↔ ESP32. (Verificable: ninguna llamada a la API lleva
+  ssid/pass/token; no aparecen en `console`/logs.)
+
+**Credenciales de la estación (002.1)**
+
+- **FR-022**: La app DEBE mostrar a RESPONSABLE/ADMIN el **UUID** de la estación, con opción
+  de copiarlo, como respaldo si no llegó el correo con las credenciales.
+- **FR-023**: La app DEBE mostrar el **token de acceso en claro únicamente** en el momento
+  de generarlo (aprobación) o **regenerarlo**, con aviso de que no se volverá a mostrar. El
+  backend guarda solo el hash: la app **NO** puede recuperar un token existente.
+- **FR-024**: La app DEBE permitir a un **ADMIN** regenerar el token de una estación,
+  advirtiendo que **invalida el token anterior** y obliga a re-provisionar. Regenerar y
+  aprobar son acciones **solo ADMIN** (el backend no cambia su autorización).
+- **FR-025**: La app DEBE permitir a un RESPONSABLE **pegar** manualmente el token (recibido
+  por correo) para provisionar, dado que no puede regenerarlo ni recuperarlo del backend.
+- **FR-026** *(seguridad del provisioning BLE)*: El token y la contraseña WiFi viajan por
+  BLE app↔ESP32. **Postura de riesgo (aceptada)**: el provisioning es **presencial**, de
+  **corto alcance** y de **un solo uso**; la app **NO** registra el token ni la contraseña
+  en logs; y el token es **regenerable/revocable por un ADMIN** si se sospecha compromiso
+  (Principio VIII). **Endurecimiento recomendado (SHOULD, futuro)**: habilitar
+  *bonding*/cifrado del enlace BLE en la app y el firmware. La app DEBERÍA advertir al
+  usuario de hacer el provisioning en un entorno de confianza.
 
 **Errores y estado**
 
@@ -241,8 +305,9 @@ estado y su última conexión.
   gráficas).
 - **Alerta**: evento meteorológico que expone el backend.
 - **Dispositivo BLE de estación**: representación efímera durante el provisioning
-  (nombre anunciado, SSID/contraseña a enviar, estado de conexión reportado). No se
-  persiste ni se envía al backend.
+  (nombre anunciado y el **paquete de configuración** a enviar: `uuid`, `token`, `ssid`,
+  `password`, `url` del backend; más el estado de conexión reportado). La contraseña WiFi y
+  el token no se loguean; el paquete no se envía al backend (es app ↔ ESP32).
 
 ## Success Criteria *(mandatory)*
 
@@ -255,9 +320,10 @@ estado y su última conexión.
 - **SC-003**: La renovación de sesión ocurre de forma transparente en el **100 %** de
   los casos en que el refresh token es válido, sin que el usuario vuelva a escribir la
   contraseña.
-- **SC-004**: Un responsable configura por BLE el WiFi de una estación encendida y
-  recibe confirmación de conexión en **menos de 2 minutos**, sin instrucciones
-  externas, en al menos el **90 %** de los intentos con credenciales correctas.
+- **SC-004** *(actualizado en 002.1)*: Un RESPONSABLE/ADMIN provisiona por BLE una estación
+  encendida (paquete completo) y recibe confirmación **`AUTH_OK`** (WiFi **y** autenticación
+  contra el backend) en **menos de 2 minutos**, sin instrucciones externas, en al menos el
+  **90 %** de los intentos con credenciales correctas.
 - **SC-005**: La app **no** expone IA, históricos crudos ni datos de usuarios a
   observadores sin cuenta (verificable revisando cada pantalla pública).
 - **SC-006**: **Cero** dependencias de Firebase en la app final (verificable en las
@@ -275,7 +341,9 @@ estado y su última conexión.
 - **Plataforma objetivo Android** para la validación de esta versión; el código es
   multiplataforma pero iOS no se valida aún.
 - **El firmware ESP32 ya expone el servicio BLE** de configuración con el nombre y las
-  características esperadas; esta feature no cambia el firmware.
+  características esperadas. *(Corregido en 002.1: en el firmware v3 `iniciarBLE()` nunca se
+  llama — el BLE está inerte — y el UUID/token/URL van hardcodeados. El incremento 002.1 SÍ
+  cambia el firmware: activar BLE, recibir el paquete único y persistirlo en NVS.)*
 - **Conectividad**: se asume red disponible para las funciones de datos; el
   provisioning BLE funciona sin red (es local al dispositivo).
 - **Stack de implementación** (detalle que se fija en `plan.md`): React Native con
@@ -291,4 +359,7 @@ estado y su última conexión.
   escuelas): se mantiene en la Web; la app se limita a lo que el rol necesita en
   campo.
 - **Modo offline / caché persistente** de lecturas históricas.
-- **Cambios en el firmware ESP32** o en el backend.
+- ~~**Cambios en el firmware ESP32** o en el backend.~~ *(Revisado en 002.1: el firmware SÍ
+  entra en alcance para el provisioning completo. El **backend** sigue sin cambios en la
+  app, salvo un **fix de gobernanza** aparte —spec `001`— que corrige el ascenso de rol al
+  aprobar una solicitud: debe ser **RESPONSABLE**, no INVESTIGADOR. Ver `plan-provisioning-completo.md` §7.)*
