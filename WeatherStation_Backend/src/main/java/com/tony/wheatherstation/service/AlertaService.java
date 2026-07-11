@@ -8,6 +8,7 @@ import com.tony.wheatherstation.mapper.AlertaMapper;
 import com.tony.wheatherstation.repository.AlertaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -31,5 +32,15 @@ public class AlertaService {
                 .map(alertaMapper::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("ALERTA_NO_ENCONTRADA",
                         "No existe la alerta " + id));
+    }
+
+    /** Elimina una alerta (ADMIN). Depura las alertas resueltas/acumuladas. */
+    @Transactional
+    public void eliminar(UUID id) {
+        if (!alertaRepository.existsById(id)) {
+            throw new ResourceNotFoundException("ALERTA_NO_ENCONTRADA",
+                    "No existe la alerta " + id);
+        }
+        alertaRepository.deleteById(id);
     }
 }

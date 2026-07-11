@@ -92,6 +92,8 @@ public class SecurityConfig {
                         // Aprobar/rechazar solo ADMIN
                         .requestMatchers(HttpMethod.POST, "/solicitudes/*/aprobar",
                                 "/solicitudes/*/rechazar").hasRole("ADMIN")
+                        // Eliminar solicitudes (depurar historial) solo ADMIN
+                        .requestMatchers(HttpMethod.DELETE, "/solicitudes/*").hasRole("ADMIN")
                         // Listar/ver detalle: ADMIN, RESPONSABLE (USUARIO ve solo las suyas vía /mis-solicitudes)
                         .requestMatchers(HttpMethod.GET, "/solicitudes").hasAnyRole("ADMIN", "RESPONSABLE")
                         .requestMatchers(HttpMethod.GET, "/solicitudes/*").hasAnyRole("ADMIN", "RESPONSABLE")
@@ -102,6 +104,8 @@ public class SecurityConfig {
                                 "/estaciones/*/estadisticas",
                                 "/estadisticas")
                             .hasAnyRole("RESPONSABLE", "INVESTIGADOR", "ADMIN")
+                        // Alertas: consulta cualquier autenticado; eliminar solo ADMIN
+                        .requestMatchers(HttpMethod.DELETE, "/alertas/*").hasRole("ADMIN")
                         // Gestión de usuarios: solo ADMIN
                         .requestMatchers("/usuarios/**").hasRole("ADMIN")
                         // El resto requiere autenticación

@@ -27,11 +27,16 @@ const RANGOS = [
 
 export function EstacionDetallePage() {
   const { id = '' } = useParams();
-  const { tieneRol } = useAuth();
-  const puedeVerHistorico = tieneRol('INVESTIGADOR', 'ADMIN');
+  const { tieneRol, esResponsable, usuario } = useAuth();
 
   const { data: estacion, isLoading, error } = useEstacion(id);
   const [horas, setHoras] = useState(24);
+
+  // INVESTIGADOR y ADMIN ven el histórico de cualquier estación. El RESPONSABLE
+  // solo el de las estaciones de las que es responsable (su propia estación).
+  const esMiEstacion = !!usuario && !!estacion && estacion.responsableId === usuario.id;
+  const puedeVerHistorico = tieneRol('INVESTIGADOR', 'ADMIN') || (esResponsable && esMiEstacion);
+
   const historial = useHistorial(id, horas, puedeVerHistorico);
 
   if (isLoading) return <p className="text-slate-500">Cargando…</p>;
@@ -100,8 +105,8 @@ export function EstacionDetallePage() {
       <h2 className="text-lg font-semibold text-slate-700 mt-8 mb-3 dark:text-slate-200">Histórico</h2>
       {!puedeVerHistorico ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-800 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-          El histórico y las gráficas están disponibles para investigadores. Contacta a un
-          administrador si necesitas ese acceso.
+          El histórico y las gráficas están disponibles para investigadores y administradores,
+          y para el responsable de esta estación. Contacta a un administrador si necesitas ese acceso.
         </div>
       ) : (
         <>

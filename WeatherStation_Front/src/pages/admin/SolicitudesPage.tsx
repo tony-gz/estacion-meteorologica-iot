@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import {
-  useAprobarSolicitud, useRechazarSolicitud, useSolicitudes,
+  useAprobarSolicitud, useEliminarSolicitud, useRechazarSolicitud, useSolicitudes,
 } from '../../lib/adminQueries';
 import { mensajeError } from '../../lib/api';
 import { Modal } from '../../components/Modal';
 import { fmtFechaHora } from '../../lib/format';
 import { Icono } from '../../components/Icono';
-import type { StationToken } from '../../lib/types';
+import type { Solicitud, StationToken } from '../../lib/types';
 
 const ESTADO_COLOR: Record<string, string> = {
   PENDING: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
@@ -20,20 +21,86 @@ export function SolicitudesPage() {
   const { data, isLoading, error } = useSolicitudes();
   const aprobar = useAprobarSolicitud();
   const rechazar = useRechazarSolicitud();
+  const eliminar = useEliminarSolicitud();
   const [token, setToken] = useState<StationToken | null>(null);
+  const [busqueda, setBusqueda] = useState('');
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+
+  const filtradas = useMemo<Solicitud[]>(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return data ?? [];
+    return (data ?? []).filter((s) =>
+      s.nombre.toLowerCase().includes(q)
+      || (s.institucion ?? s.escuelaNombre ?? '').toLowerCase().includes(q)
+      || (s.solicitanteNombre ?? '').toLowerCase().includes(q)
+      || (s.solicitanteEmail ?? '').toLowerCase().includes(q)
+      || s.estado.toLowerCase().includes(q));
+  }, [data, busqueda]);
+
+  const idsVisibles = filtradas.map((s) => s.id);
+  const todasSeleccionadas = idsVisibles.length > 0 && idsVisibles.every((id) => seleccion.has(id));
+  const algunaSeleccionada = seleccion.size > 0;
+
+  function alternar(id: string) {
+    setSeleccion((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function alternarTodas() {
+    setSeleccion(todasSeleccionadas ? new Set() : new Set(idsVisibles));
+  }
+
+  async function eliminarSeleccionadas() {
+    const ids = [...seleccion];
+    if (ids.length === 0) return;
+    if (!confirm(`¿Eliminar ${ids.length} solicitud(es)? Esta acción no se puede deshacer.`)) return;
+    await Promise.allSettled(ids.map((id) => eliminar.mutateAsync(id)));
+    setSeleccion(new Set());
+  }
 
   if (isLoading) return <p className="text-slate-500">Cargando solicitudes…</p>;
   if (error) return <p className="text-rose-700">{mensajeError(error)}</p>;
 
+  const colSpan = esAdmin ? 7 : 5;
+
   return (
     <div>
-      <p className="text-sm text-slate-500 mb-4 dark:text-slate-400">
-        Solicitudes de alta de estaciones. Los usuarios pueden solicitar tokens desde el formulario público.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Solicitudes de alta de estaciones. Los usuarios pueden solicitar tokens desde el formulario público.
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre, institución, solicitante o estado…"
+            className="w-72 max-w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100"
+          />
+          {esAdmin && algunaSeleccionada && (
+            <button
+              onClick={eliminarSeleccionadas}
+              disabled={eliminar.isPending}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 whitespace-nowrap"
+            >
+              <Trash2 size={15} /> Eliminar ({seleccion.size})
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-left dark:bg-slate-700/50 dark:text-slate-400">
             <tr>
+              {esAdmin && (
+                <th className="px-4 py-2 w-10">
+                  <input type="checkbox" checked={todasSeleccionadas} onChange={alternarTodas}
+                         aria-label="Seleccionar todas" className="align-middle accent-sky-600" />
+                </th>
+              )}
               <th className="px-4 py-2 font-medium">Nombre</th>
               <th className="px-4 py-2 font-medium">Institución</th>
               <th className="px-4 py-2 font-medium">Solicitante</th>
@@ -43,11 +110,19 @@ export function SolicitudesPage() {
             </tr>
           </thead>
           <tbody>
-            {data?.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">Sin solicitudes.</td></tr>
+            {filtradas.length === 0 && (
+              <tr><td colSpan={colSpan} className="px-4 py-6 text-center text-slate-400">
+                {busqueda ? 'Sin solicitudes que coincidan con la búsqueda.' : 'Sin solicitudes.'}
+              </td></tr>
             )}
-            {data?.map((s) => (
+            {filtradas.map((s) => (
               <tr key={s.id} className="border-t border-slate-100 dark:border-slate-700">
+                {esAdmin && (
+                  <td className="px-4 py-2">
+                    <input type="checkbox" checked={seleccion.has(s.id)} onChange={() => alternar(s.id)}
+                           aria-label={`Seleccionar ${s.nombre}`} className="align-middle accent-sky-600" />
+                  </td>
+                )}
                 <td className="px-4 py-2">{s.nombre}</td>
                 <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{s.institucion ?? s.escuelaNombre ?? '—'}</td>
                 <td className="px-4 py-2 text-slate-500 dark:text-slate-400">
@@ -61,14 +136,22 @@ export function SolicitudesPage() {
                 <td className="px-4 py-2 text-slate-400 text-xs">{fmtFechaHora(s.createdAt)}</td>
                 {esAdmin && (
                   <td className="px-4 py-3">
-                    {s.estado === 'PENDING' ? (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <button disabled={aprobar.isPending} onClick={() => aprobar.mutate(s.id, { onSuccess: setToken })}
-                                className="px-2.5 py-1 rounded-md text-xs font-medium border transition disabled:opacity-40 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800/70 dark:text-emerald-400 dark:hover:bg-emerald-950/40">Aprobar</button>
-                        <button disabled={rechazar.isPending} onClick={() => rechazar.mutate({ id: s.id })}
-                                className="px-2.5 py-1 rounded-md text-xs font-medium border transition disabled:opacity-40 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800/70 dark:text-rose-400 dark:hover:bg-rose-950/40">Rechazar</button>
-                      </div>
-                    ) : <span className="text-slate-400 text-xs">resuelta</span>}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {s.estado === 'PENDING' && (
+                        <>
+                          <button disabled={aprobar.isPending} onClick={() => aprobar.mutate(s.id, { onSuccess: setToken })}
+                                  className="px-2.5 py-1 rounded-md text-xs font-medium border transition disabled:opacity-40 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800/70 dark:text-emerald-400 dark:hover:bg-emerald-950/40">Aprobar</button>
+                          <button disabled={rechazar.isPending} onClick={() => rechazar.mutate({ id: s.id })}
+                                  className="px-2.5 py-1 rounded-md text-xs font-medium border transition disabled:opacity-40 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800/70 dark:text-rose-400 dark:hover:bg-rose-950/40">Rechazar</button>
+                        </>
+                      )}
+                      <button disabled={eliminar.isPending}
+                              onClick={() => { if (confirm(`¿Eliminar la solicitud de "${s.nombre}"?`)) eliminar.mutate(s.id); }}
+                              title="Eliminar solicitud"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border transition disabled:opacity-40 border-slate-300 text-slate-500 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-rose-950/40 dark:hover:text-rose-400">
+                        <Trash2 size={13} /> Eliminar
+                      </button>
+                    </div>
                   </td>
                 )}
               </tr>

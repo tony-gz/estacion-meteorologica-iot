@@ -202,5 +202,3 @@ de alguna estación y remapearlos a RESPONSABLE (script/consulta única).
 - **TLS inseguro en ESP32** (`setInsecure()`): ya existente; fuera de alcance aquí, anotado.
 - **Compatibilidad**: mantener el flujo legado evita romper firmwares viejos durante la
   transición.
-</content>
-</invoke>

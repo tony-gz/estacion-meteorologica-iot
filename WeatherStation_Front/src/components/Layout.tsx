@@ -47,7 +47,7 @@ export function Layout() {
               </svg>
             </span>
             <span className="leading-tight min-w-0">
-              <span className="block font-extrabold tracking-tight bg-gradient-to-r from-sky-600 to-indigo-600
+              <span translate="no" className="block font-extrabold tracking-tight bg-gradient-to-r from-sky-600 to-indigo-600
                                bg-clip-text text-transparent text-lg">CLIMBOT</span>
               <span className="block text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">
                 Estaciones IoT
