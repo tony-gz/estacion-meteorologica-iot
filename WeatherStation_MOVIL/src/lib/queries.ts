@@ -89,6 +89,15 @@ export function useAlertas(enabled = true) {
   });
 }
 
+/** DELETE /alertas/{id} → eliminar una alerta (solo ADMIN). Depura las acumuladas. */
+export function useEliminarAlerta() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { await api.delete(`/alertas/${id}`); },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alertas'] }),
+  });
+}
+
 // ── Asistente IA (solo autenticado) — FR-009 ────────────────────────────────
 
 /** POST /ia/preguntar {estacionId, pregunta} → respuesta fundamentada. */

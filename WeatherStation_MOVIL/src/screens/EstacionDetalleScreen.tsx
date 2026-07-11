@@ -19,7 +19,7 @@ import type { PantallaProps } from '../navigation/types';
 export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'EstacionDetalle'>) {
   const { id, nombre } = route.params;
   const t = usarTema(useColorScheme());
-  const { tieneRol, esAdmin } = useAuth();
+  const { tieneRol, esAdmin, esResponsable, usuario } = useAuth();
   const verConexiones = tieneRol('RESPONSABLE', 'ADMIN');
   const puedeProvisionar = tieneRol('RESPONSABLE', 'ADMIN');
   const { data, isPending, isError, error, refetch, isRefetching } = useEstacion(id);
@@ -55,6 +55,11 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
 
   const l = data.ultimaLectura;
 
+  // INVESTIGADOR y ADMIN ven el histórico de cualquier estación; el RESPONSABLE
+  // solo el de su propia estación (de la que es responsable). USUARIO no accede.
+  const esMiEstacion = !!usuario && data.responsableId === usuario.id;
+  const puedeVerHistorico = tieneRol('INVESTIGADOR', 'ADMIN') || (esResponsable && esMiEstacion);
+
   return (
     <ScrollView
       style={{ backgroundColor: t.fondo }}
@@ -89,14 +94,24 @@ export function EstacionDetalleScreen({ route, navigation }: PantallaProps<'Esta
       )}
 
       <View style={styles.acciones}>
-        <Pressable
-          onPress={() => navigation.navigate('Graficas', { id, nombre: data.nombre })}
-          style={[styles.boton, styles.botonRow, { backgroundColor: t.primario }]}
-          accessibilityRole="button"
-        >
-          <Icono nombre="chart-line" size={18} color="#fff" />
-          <Text style={styles.botonTexto}>Ver histórico</Text>
-        </Pressable>
+        {puedeVerHistorico ? (
+          <Pressable
+            onPress={() => navigation.navigate('Graficas', { id, nombre: data.nombre })}
+            style={[styles.boton, styles.botonRow, { backgroundColor: t.primario }]}
+            accessibilityRole="button"
+          >
+            <Icono nombre="chart-line" size={18} color="#fff" />
+            <Text style={styles.botonTexto}>Ver histórico</Text>
+          </Pressable>
+        ) : (
+          <View style={[styles.avisoHistorico, { borderColor: t.borde }]}>
+            <Icono nombre="lock" size={16} color={t.textoTenue} />
+            <Text style={[styles.credNota, { color: t.textoTenue, flex: 1 }]}>
+              El histórico y las gráficas están disponibles para investigadores, administradores
+              y el responsable de esta estación.
+            </Text>
+          </View>
+        )}
       </View>
 
       {puedeProvisionar && (
@@ -192,6 +207,7 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   sinLectura: { fontSize: 13, fontStyle: 'italic', marginTop: 6 },
   acciones: { marginTop: 12 },
+  avisoHistorico: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 12, padding: 12 },
   boton: { borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   botonRow: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '700' },

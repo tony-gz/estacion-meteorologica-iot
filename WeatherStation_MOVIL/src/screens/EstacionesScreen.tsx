@@ -13,6 +13,11 @@ import { Loading } from '../components/Loading';
 import { ErrorRetry } from '../components/ErrorRetry';
 import type { RootNav } from '../navigation/types';
 
+// Orden de la lista: las PENDING (requieren acción) primero, luego el resto.
+const ORDEN_ESTADO: Record<string, number> = {
+  PENDING: 0, MAINTENANCE: 1, APPROVED: 2, DISABLED: 3, REJECTED: 4,
+};
+
 // US2: lista de estaciones (autenticado). Tap → detalle.
 export function EstacionesScreen() {
   const t = usarTema(useColorScheme());
@@ -24,11 +29,15 @@ export function EstacionesScreen() {
   if (isPending) return <Loading mensaje="Cargando estaciones…" />;
   if (isError) return <ErrorRetry mensaje={mensajeError(error)} onReintentar={refetch} />;
 
+  const estaciones = [...data].sort(
+    (a, b) => (ORDEN_ESTADO[a.estado] ?? 9) - (ORDEN_ESTADO[b.estado] ?? 9),
+  );
+
   return (
     <FlatList
       style={{ backgroundColor: t.fondo }}
       contentContainerStyle={styles.lista}
-      data={data}
+      data={estaciones}
       keyExtractor={(e) => e.uuid}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={t.primario} />}
       ListHeaderComponent={
