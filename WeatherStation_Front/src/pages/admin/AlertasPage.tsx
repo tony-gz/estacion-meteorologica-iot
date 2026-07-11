@@ -1,21 +1,59 @@
-import { useState } from 'react';
-import { useAlertas, type FiltrosAlerta } from '../../lib/adminQueries';
+import { useMemo, useState } from 'react';
+import { Trash2 } from 'lucide-react';
+import { useAlertas, useEliminarAlerta, type FiltrosAlerta } from '../../lib/adminQueries';
 import { useEstaciones } from '../../lib/queries';
+import { useAuth } from '../../auth/AuthContext';
 import { mensajeError } from '../../lib/api';
 import { fmtFechaHora } from '../../lib/format';
-import type { EstadoAlerta, Severidad, TipoAlerta } from '../../lib/types';
+import type { Alerta, EstadoAlerta, Severidad, TipoAlerta } from '../../lib/types';
 
 const TIPOS: TipoAlerta[] = ['LLUVIA', 'VIENTO_FUERTE', 'CALOR_EXTREMO'];
 const ESTADOS: EstadoAlerta[] = ['ACTIVA', 'RESUELTA'];
 
 export function AlertasPage() {
+  const { esAdmin } = useAuth();
   const [filtros, setFiltros] = useState<FiltrosAlerta>({});
+  const [busqueda, setBusqueda] = useState('');
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const { data, isLoading, error } = useAlertas(filtros);
   const estaciones = useEstaciones();
+  const eliminar = useEliminarAlerta();
+
+  const filtradas = useMemo<Alerta[]>(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return data ?? [];
+    return (data ?? []).filter((a) =>
+      a.tipo.toLowerCase().includes(q)
+      || a.estacionId.toLowerCase().includes(q)
+      || (a.mensaje ?? '').toLowerCase().includes(q));
+  }, [data, busqueda]);
+
+  const idsVisibles = filtradas.map((a) => a.id);
+  const todasSeleccionadas = idsVisibles.length > 0 && idsVisibles.every((id) => seleccion.has(id));
+
+  function alternar(id: string) {
+    setSeleccion((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function alternarTodas() {
+    setSeleccion(todasSeleccionadas ? new Set() : new Set(idsVisibles));
+  }
+
+  async function eliminarSeleccionadas() {
+    const ids = [...seleccion];
+    if (ids.length === 0) return;
+    if (!confirm(`¿Eliminar ${ids.length} alerta(s)? Esta acción no se puede deshacer.`)) return;
+    await Promise.allSettled(ids.map((id) => eliminar.mutateAsync(id)));
+    setSeleccion(new Set());
+  }
 
   return (
     <div>
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap items-end gap-3 mb-4">
         <Select label="Estación" value={filtros.estacionId ?? ''}
                 onChange={(v) => setFiltros((f) => ({ ...f, estacionId: v || undefined }))}>
           <option value="">Todas</option>
@@ -31,17 +69,43 @@ export function AlertasPage() {
           <option value="">Todos</option>
           {ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}
         </Select>
+        <label className="text-sm flex-1 min-w-48">
+          <span className="block text-slate-500 mb-1 dark:text-slate-400">Buscar</span>
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Tipo, estación o mensaje…"
+            className="w-full rounded-md border border-slate-300 px-3 py-1.5 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100"
+          />
+        </label>
+        {esAdmin && seleccion.size > 0 && (
+          <button
+            onClick={eliminarSeleccionadas}
+            disabled={eliminar.isPending}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            <Trash2 size={15} /> Eliminar ({seleccion.size})
+          </button>
+        )}
       </div>
 
       {isLoading && <p className="text-slate-500">Cargando alertas…</p>}
       {error && <p className="text-rose-700">{mensajeError(error)}</p>}
-      {data && data.length === 0 && <p className="text-slate-400">No hay alertas con esos filtros.</p>}
+      {data && filtradas.length === 0 && (
+        <p className="text-slate-400">No hay alertas con esos filtros.</p>
+      )}
 
-      {data && data.length > 0 && (
+      {filtradas.length > 0 && (
         <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-left dark:bg-slate-700/50 dark:text-slate-400">
               <tr>
+                {esAdmin && (
+                  <th className="px-4 py-2 w-10">
+                    <input type="checkbox" checked={todasSeleccionadas} onChange={alternarTodas}
+                           aria-label="Seleccionar todas" className="align-middle accent-sky-600" />
+                  </th>
+                )}
                 <th className="px-4 py-2 font-medium">Tipo</th>
                 <th className="px-4 py-2 font-medium">Estación</th>
                 <th className="px-4 py-2 font-medium">Severidad</th>
@@ -52,8 +116,14 @@ export function AlertasPage() {
               </tr>
             </thead>
             <tbody>
-              {data.map((a) => (
+              {filtradas.map((a) => (
                 <tr key={a.id} className="border-t border-slate-100 dark:border-slate-700">
+                  {esAdmin && (
+                    <td className="px-4 py-2">
+                      <input type="checkbox" checked={seleccion.has(a.id)} onChange={() => alternar(a.id)}
+                             aria-label="Seleccionar alerta" className="align-middle accent-sky-600" />
+                    </td>
+                  )}
                   <td className="px-4 py-2 font-medium">{a.tipo}</td>
                   <td className="px-4 py-2 font-mono text-xs">{a.estacionId}</td>
                   <td className="px-4 py-2"><SevBadge s={a.severidad} /></td>

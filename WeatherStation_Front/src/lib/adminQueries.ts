@@ -221,6 +221,18 @@ export function useRechazarSolicitud() {
   });
 }
 
+/** Eliminar una solicitud (ADMIN). Depura el historial acumulado. */
+export function useEliminarSolicitud() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/solicitudes/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['solicitudes'] });
+      qc.invalidateQueries({ queryKey: ['mis-solicitudes'] });
+    },
+  });
+}
+
 // ── Alertas ─────────────────────────────────────────────────────────────────
 
 export interface FiltrosAlerta {
@@ -239,5 +251,14 @@ export function useAlertas(filtros: FiltrosAlerta) {
       if (filtros.estado) params.estado = filtros.estado;
       return (await api.get<Alerta[]>('/alertas', { params })).data;
     },
+  });
+}
+
+/** Eliminar una alerta (ADMIN). Depura las alertas acumuladas. */
+export function useEliminarAlerta() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/alertas/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alertas'] }),
   });
 }

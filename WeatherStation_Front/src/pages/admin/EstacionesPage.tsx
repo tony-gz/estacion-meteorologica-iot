@@ -1,4 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
+import {
+  Check, KeyRound, PauseCircle, PlayCircle, RadioTower, Trash2, Wrench, X,
+} from 'lucide-react';
 import { useEstaciones } from '../../lib/queries';
 import {
   useAccionEstacion, useConexiones, useEliminarEstacion, useEscuelas,
@@ -11,6 +14,11 @@ import { MenuAcciones, MenuItem, MenuSep } from '../../components/MenuAcciones';
 import { fmtFechaHora } from '../../lib/format';
 import { Icono } from '../../components/Icono';
 import type { Estacion, StationToken } from '../../lib/types';
+
+// Orden de la lista: las PENDING (requieren acción) primero, luego el resto.
+const ORDEN_ESTADO: Record<string, number> = {
+  PENDING: 0, MAINTENANCE: 1, APPROVED: 2, DISABLED: 3, REJECTED: 4,
+};
 
 const ESTADO_COLOR: Record<string, string> = {
   PENDING: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
@@ -25,20 +33,40 @@ export function EstacionesPage() {
   const [registrando, setRegistrando] = useState(false);
   const [token, setToken] = useState<StationToken | null>(null);
   const [conexiones, setConexiones] = useState<Estacion | null>(null);
+  const [busqueda, setBusqueda] = useState('');
+
+  const estaciones = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    return (data ?? [])
+      .filter((e) => !q
+        || e.nombre.toLowerCase().includes(q)
+        || (e.escuelaNombre ?? '').toLowerCase().includes(q)
+        || (e.municipio ?? '').toLowerCase().includes(q))
+      .slice()
+      .sort((a, b) => (ORDEN_ESTADO[a.estado] ?? 9) - (ORDEN_ESTADO[b.estado] ?? 9));
+  }, [data, busqueda]);
 
   if (isLoading) return <p className="text-slate-500">Cargando estaciones…</p>;
   if (error) return <p className="text-rose-700">{mensajeError(error)}</p>;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Gobernanza de estaciones: registrar, aprobar y administrar el ciclo de vida.
         </p>
-        <button onClick={() => setRegistrando(true)}
-                className="px-3 py-1.5 rounded-md text-sm font-medium bg-sky-600 text-white hover:bg-sky-700">
-          + Registrar estación
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre, escuela o municipio…"
+            className="w-64 max-w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100"
+          />
+          <button onClick={() => setRegistrando(true)}
+                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-sky-600 text-white hover:bg-sky-700 whitespace-nowrap">
+            + Registrar estación
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
@@ -53,7 +81,12 @@ export function EstacionesPage() {
             </tr>
           </thead>
           <tbody>
-            {data?.map((e) => (
+            {estaciones.length === 0 && (
+              <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400">
+                {busqueda ? 'Sin estaciones que coincidan con la búsqueda.' : 'Sin estaciones.'}
+              </td></tr>
+            )}
+            {estaciones.map((e) => (
               <Fila key={e.id} e={e} onToken={setToken} onConexiones={setConexiones} />
             ))}
           </tbody>
@@ -96,25 +129,25 @@ function Fila({ e, onToken, onConexiones }: {
             <>
               {e.estado === 'PENDING' && (
                 <>
-                  <MenuItem tono="ok" onClick={() => { close(); aprobar.mutate(e.uuid, { onSuccess: onToken }); }}>✓ Aprobar</MenuItem>
-                  <MenuItem tono="danger" onClick={() => { close(); rechazar.mutate({ uuid: e.uuid }); }}>✕ Rechazar</MenuItem>
+                  <MenuItem tono="ok" onClick={() => { close(); aprobar.mutate(e.uuid, { onSuccess: onToken }); }}><Check size={16} /> Aprobar</MenuItem>
+                  <MenuItem tono="danger" onClick={() => { close(); rechazar.mutate({ uuid: e.uuid }); }}><X size={16} /> Rechazar</MenuItem>
                 </>
               )}
               {e.estado === 'APPROVED' && (
                 <>
-                  <MenuItem onClick={() => { close(); mantenimiento.mutate({ uuid: e.uuid }); }}>🔧 Mantenimiento</MenuItem>
-                  <MenuItem onClick={() => { close(); deshabilitar.mutate({ uuid: e.uuid }); }}>⏸ Deshabilitar</MenuItem>
-                  <MenuItem onClick={() => { close(); regenerar.mutate(e.uuid, { onSuccess: onToken }); }}>🔑 Regenerar token</MenuItem>
+                  <MenuItem onClick={() => { close(); mantenimiento.mutate({ uuid: e.uuid }); }}><Wrench size={16} /> Mantenimiento</MenuItem>
+                  <MenuItem onClick={() => { close(); deshabilitar.mutate({ uuid: e.uuid }); }}><PauseCircle size={16} /> Deshabilitar</MenuItem>
+                  <MenuItem onClick={() => { close(); regenerar.mutate(e.uuid, { onSuccess: onToken }); }}><KeyRound size={16} /> Regenerar token</MenuItem>
                 </>
               )}
               {(e.estado === 'DISABLED' || e.estado === 'MAINTENANCE') && (
-                <MenuItem tono="ok" onClick={() => { close(); reactivar.mutate({ uuid: e.uuid }); }}>▶ Reactivar</MenuItem>
+                <MenuItem tono="ok" onClick={() => { close(); reactivar.mutate({ uuid: e.uuid }); }}><PlayCircle size={16} /> Reactivar</MenuItem>
               )}
-              <MenuItem onClick={() => { close(); onConexiones(e); }}>📡 Conexiones</MenuItem>
+              <MenuItem onClick={() => { close(); onConexiones(e); }}><RadioTower size={16} /> Conexiones</MenuItem>
               <MenuSep />
               <MenuItem tono="danger"
                         onClick={() => { close(); if (confirm(`¿Eliminar ${e.nombre}?`)) eliminar.mutate(e.uuid); }}>
-                <span className="inline-flex items-center gap-1.5"><Icono nombre="🗑" size={14} /> Eliminar</span>
+                <Trash2 size={16} /> Eliminar
               </MenuItem>
             </>
           )}

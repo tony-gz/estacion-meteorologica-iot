@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { mensajeError } from '../lib/api';
@@ -10,14 +10,22 @@ export function LoginPage() {
   const navigate = useNavigate();
 
   const [searchParams] = useSearchParams();
-  const [modo, setModo] = useState<Modo>(
-    searchParams.get('mode') === 'registro' ? 'registro' : 'login'
-  );
+  const modoUrl: Modo = searchParams.get('mode') === 'registro' ? 'registro' : 'login';
+  const [modo, setModo] = useState<Modo>(modoUrl);
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+
+  // Los botones "Crear cuenta" / "Iniciar sesión" de la barra superior solo cambian
+  // el query param (?mode=); al estar ya montada esta página, hay que sincronizar el
+  // estado local con la URL para que la pestaña cambie (antes solo lo hacía el enlace
+  // interno "¿Ya tienes cuenta?…").
+  useEffect(() => {
+    setModo(modoUrl);
+    setError(null);
+  }, [modoUrl]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

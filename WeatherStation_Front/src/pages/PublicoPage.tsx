@@ -19,7 +19,7 @@ export function PublicoPage() {
       <div className="relative rounded-2xl overflow-hidden h-48 sm:h-56 mb-6 shadow-md">
         <FondoClimaCiclo />
         <div className="relative z-10 h-full flex flex-col justify-center items-center text-center px-5 text-white">
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight drop-shadow-lg">CLIMBOT</h1>
+          <h1 translate="no" className="text-4xl sm:text-5xl font-extrabold tracking-tight drop-shadow-lg">CLIMBOT</h1>
           <p className="mt-1 text-white/90 text-sm sm:text-base drop-shadow">
             Red de estaciones meteorológicas — vista pública
           </p>

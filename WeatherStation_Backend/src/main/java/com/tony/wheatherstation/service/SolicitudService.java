@@ -238,6 +238,16 @@ public class SolicitudService {
         return response;
     }
 
+    /**
+     * Elimina una solicitud (ADMIN). Solo borra el registro de la solicitud; si ya
+     * fue aprobada, la estación creada permanece (su ciclo de vida se gestiona aparte).
+     */
+    @Transactional
+    public void eliminar(UUID id) {
+        SolicitudRegistro solicitud = buscar(id);
+        solicitudRepository.delete(solicitud);
+    }
+
     private SolicitudRegistro buscar(UUID id) {
         return solicitudRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("SOLICITUD_NO_ENCONTRADA",

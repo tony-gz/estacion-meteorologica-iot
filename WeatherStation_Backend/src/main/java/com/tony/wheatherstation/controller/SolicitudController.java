@@ -11,6 +11,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -71,5 +73,12 @@ public class SolicitudController {
     public SolicitudResponse rechazar(@PathVariable UUID id,
                                       @RequestBody(required = false) EstacionAccionRequest request) {
         return solicitudService.rechazar(id, request != null ? request.motivo() : null);
+    }
+
+    @Operation(summary = "Eliminar una solicitud (ADMIN). Depura el historial acumulado.")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> eliminar(@PathVariable UUID id) {
+        solicitudService.eliminar(id);
+        return ResponseEntity.noContent().build();
     }
 }
