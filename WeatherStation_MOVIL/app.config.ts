@@ -1,9 +1,14 @@
 import type { ExpoConfig } from 'expo/config';
 
-// API_URL: origen del backend Spring (spec 001). En dev, la IP LAN del backend
-// (el móvil y el ESP32 deben alcanzarlo), p. ej. http://192.168.1.100:8080.
-// En prod, la URL pública (Render). Se inyecta por variable de entorno.
-const API_URL = process.env.API_URL ?? process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8080';
+// API_URL: origen del backend Spring (spec 001). Fallback = producción (Render),
+// para que un build sin variables de entorno apunte a un backend real y no a un
+// localhost inalcanzable desde el teléfono. En dev, sobreescribe con la IP LAN
+// del backend (el móvil y el ESP32 deben alcanzarlo), p. ej.:
+//   API_URL=http://192.168.1.100:8080 npx expo run:android
+const API_URL =
+  process.env.API_URL ??
+  process.env.EXPO_PUBLIC_API_URL ??
+  'https://weatherstation-backend.onrender.com';
 
 const config: ExpoConfig = {
   name: 'CLIMBOT',

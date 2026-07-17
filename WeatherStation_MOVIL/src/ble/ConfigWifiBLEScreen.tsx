@@ -9,15 +9,31 @@ import { usarTema } from '../theme/theme';
 import { solicitarPermisosBLE, abrirAjustes } from './permissions';
 import { bleDisponible, escanearMeteo, estadoBluetooth, State } from './bleManager';
 import { provisionCompleto, desconectar } from './provisioning';
+import { useEstaciones } from '../lib/queries';
 import type { EstadoBLE } from './status';
 import type { PantallaProps } from '../navigation/types';
 
 const DURACION_ESCANEO_MS = 15_000;
 const URL_BACKEND_DEFAULT = 'https://weatherstation-backend.onrender.com';
 
-/** Extrae el UUID del nombre anunciado `Meteo-{uuid}`. */
+const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Lo que la estación anuncia tras `Meteo-` es sólo el ÚLTIMO bloque del uuid
+ * (p. ej. `Meteo-045cda08568c`): el uuid completo no cabe en el paquete de
+ * anuncio BLE (31 bytes) y hacía crashear al firmware. Antes rellenábamos el
+ * campo UUID con ese fragmento, que no es un uuid válido: si no te dabas cuenta,
+ * provisionabas la estación con una identidad inexistente y el backend
+ * respondía 401. Ahora sólo se autorrellena si el nombre trae un uuid entero.
+ */
 function uuidDeNombre(nombre?: string | null): string {
-  return (nombre ?? '').replace(/^Meteo-/i, '').trim();
+  const resto = (nombre ?? '').replace(/^Meteo-/i, '').trim();
+  return RE_UUID.test(resto) ? resto : '';
+}
+
+/** El sufijo anunciado, para avisar si el uuid tecleado es de OTRA estación. */
+function sufijoDeNombre(nombre?: string | null): string {
+  return (nombre ?? '').replace(/^Meteo-/i, '').trim().toLowerCase();
 }
 
 /** Valida que la URL sea http(s) y con formato razonable. */
@@ -29,6 +45,11 @@ function urlValida(u: string): boolean {
 export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
   const t = usarTema(useColorScheme());
   const params = route.params ?? {};
+
+  // Si no llegó un UUID por navegación (entrada genérica desde la pestaña
+  // Estaciones), cargamos las estaciones de la cuenta para autocompletarlo.
+  const uuidPreset = !!params.uuid;
+  const misEstaciones = useEstaciones(!uuidPreset);
 
   const [soportado, setSoportado] = useState(true);
   const [permisoOk, setPermisoOk] = useState<boolean | null>(null);
@@ -94,7 +115,35 @@ export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
   // Desconecta el dispositivo seleccionado al cambiar de selección o al desmontar (FR-036).
   useEffect(() => () => { if (sel) desconectar(sel.id); }, [sel]);
 
-  const puedeEnviar = !!sel && !!uuidEst.trim() && !!token.trim()
+  // Autocompleta el UUID con la estación vinculada a la cuenta: si hay exactamente
+  // una, la pone directa; si hay varias, intenta casar con la que se anuncia por
+  // BLE (último bloque del uuid). No pisa lo que el usuario ya haya escrito ni un
+  // UUID que haya llegado por navegación.
+  useEffect(() => {
+    if (uuidPreset || uuidEst) return;
+    const ests = misEstaciones.data;
+    if (!ests?.length) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- prefill desde datos del backend
+    if (ests.length === 1) { setUuidEst(ests[0].uuid); return; }
+    const suf = sufijoDeNombre(sel?.name);
+    if (suf) {
+      const m = ests.find((e) => e.uuid.toLowerCase().endsWith(suf));
+      if (m) setUuidEst(m.uuid);
+    }
+  }, [misEstaciones.data, sel, uuidEst, uuidPreset]);
+
+  // Un uuid con formato inválido garantiza un 401 del backend: no dejamos enviarlo.
+  const uuidOk = RE_UUID.test(uuidEst.trim());
+
+  // El nombre BLE termina en el último bloque del uuid que la estación tiene
+  // guardado. Si el uuid tecleado no acaba igual, se está provisionando una
+  // identidad distinta a la que la estación cree tener: puede ser justo lo que
+  // quieres (corregir un uuid mal grabado), pero conviene verlo antes de enviar.
+  const sufijoAnunciado = sufijoDeNombre(sel?.name);
+  const uuidNoCoincide = uuidOk && !!sufijoAnunciado
+    && !uuidEst.trim().toLowerCase().endsWith(sufijoAnunciado);
+
+  const puedeEnviar = !!sel && uuidOk && !!token.trim()
     && !!ssid.trim() && !!password && urlValida(url);
 
   async function onEnviar() {
@@ -189,6 +238,45 @@ export function ConfigWifiBLEScreen({ route }: PantallaProps<'ConfigWifiBLE'>) {
             onChangeText={setUuidEst}
             editable={!enviando}
           />
+          {!!uuidEst.trim() && !uuidOk && (
+            <Text style={[styles.avisoTexto, { color: t.error }]}>
+              No parece un uuid (8-4-4-4-12). Cópialo tal cual del panel: si no, la estación
+              se conectará al WiFi pero el servidor la rechazará.
+            </Text>
+          )}
+          {uuidNoCoincide && (
+            <Text style={[styles.avisoTexto, { color: t.error }]}>
+              Ojo: esta estación se anuncia como …{sufijoAnunciado}, y el uuid que pusiste
+              termina distinto. Vas a cambiarle la identidad.
+            </Text>
+          )}
+          {!uuidPreset && (misEstaciones.data?.length ?? 0) > 1 && (
+            <View style={styles.misEst}>
+              <Text style={[styles.etiqueta, { color: t.textoTenue }]}>
+                Tus estaciones (toca para autocompletar el UUID)
+              </Text>
+              <View style={styles.chips}>
+                {misEstaciones.data!.map((e) => {
+                  const activa = uuidEst.trim().toLowerCase() === e.uuid.toLowerCase();
+                  return (
+                    <Pressable
+                      key={e.uuid}
+                      onPress={() => setUuidEst(e.uuid)}
+                      style={[styles.chip, {
+                        borderColor: activa ? t.primario : t.borde,
+                        backgroundColor: activa ? t.primario : 'transparent',
+                      }]}
+                      accessibilityRole="button"
+                    >
+                      <Text style={[styles.chipTexto, { color: activa ? '#fff' : t.texto }]} numberOfLines={1}>
+                        {e.nombre} · …{e.uuid.slice(-6)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
           <Text style={[styles.etiqueta, { color: t.textoTenue }]}>Token de acceso (del correo)</Text>
           <TextInput
             style={[styles.input, { backgroundColor: t.superficie, borderColor: t.borde, color: t.texto }]}
@@ -334,6 +422,10 @@ const styles = StyleSheet.create({
   aviso2: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 10, padding: 10 },
   avisoTexto: { fontSize: 12.5, lineHeight: 17 },
   etiqueta: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  misEst: { gap: 6 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, maxWidth: '100%' },
+  chipTexto: { fontSize: 13, fontWeight: '600' },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16 },
   boton: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '700' },
