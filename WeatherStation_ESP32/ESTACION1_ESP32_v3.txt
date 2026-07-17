@@ -9,6 +9,30 @@
 //       (opcional) POST /api/device/heartbeat -> latido de salud
 //  El token permanente de la estación lo genera el backend al APROBARLA.
 //
+//  FIX AUTH — por qué la estación nunca se autenticaba:
+//    El handshake TLS necesita ~45 KB de heap CONTIGUO, y el stack BLE dejaba
+//    sólo ~18 KB. Autenticar con el BLE encendido era imposible: connect()
+//    devolvía -1 (connection refused) sin llegar a hablar con el backend. Y
+//    apagar el BLE en caliente tampoco servía: BLEDevice::deinit() con el
+//    celular todavía conectado cuelga a Bluedroid, y la estación se congelaba
+//    ahí sin llegar nunca a los sensores.
+//
+//    Solución: BLE y TLS ya no coexisten. Al ENCENDER la estación se abre una
+//    ventana BLE para configurarla o cambiarle la red; en cuanto recibe una red
+//    que funciona, la guarda y se REINICIA. Ese reinicio (y sólo ese) arranca en
+//    modo operativo: sin BLE, con todo el heap para el handshake. Si nadie toca
+//    la estación durante la ventana, se reinicia sola y se pone a operar.
+//    Ver SETUP.
+//
+//  Además:
+//    - Backoff más largo entre reintentos del handshake (5s/15s/30s): el plan
+//      free de Render duerme el servicio y el primer POST tarda ~50s en
+//      responder mientras despierta.
+//    - Pre-vuelo de red antes del handshake (DNS + TCP:443 + DNS de NTP) y
+//      traza del error real: code < 0 = fallo de transporte (no llegamos a
+//      hablar con el backend); 401 = el backend nos rechazó. Son cosas MUY
+//      distintas y antes se confundían.
+//
 //  PINES Y SENSORES SIN CAMBIOS:
 //    Wire  (Bus 0) SDA=27, SCL=22 → OLED SSD1306 (0x3C) [opcional]
 //    Wire1 (Bus 1) SDA=32, SCL=33 → AHT20 (0x38) / BMP280 (0x77) / AS5600 (0x36)
@@ -17,6 +41,7 @@
 
 #include <Wire.h>
 #include <WiFi.h>
+#include <esp_system.h>   // esp_reset_reason(): distingue nuestro ESP.restart() del encendido
 #include <Adafruit_AHTX0.h>
 #include <Adafruit_BMP280.h>
 #include <AS5600.h>
@@ -46,15 +71,23 @@
 
 // Credenciales de ESTA estación (las da el backend al APROBARLA, una sola vez).
 // Pega aquí el uuid y el token. Más adelante pueden inyectarse por BLE.
-#define EST_UUID       "60ce6191-cf10-48eb-88ae-045cda08568c"
-#define EST_TOKEN      "stk_qjI4mS4lMW5FfjFKoHZGlN1tvehJ3WP2v0S-VOy3zkI"
+#define EST_UUID       ""
+#define EST_TOKEN      ""
 
 // Si dejas vacío, sólo se podrá configurar WiFi por BLE o cargar de flash.
-#define WIFI_SSID  "404! Error de red"
-#define WIFI_PASS  "hdkRI4apUuLMgv5m"
+#define WIFI_SSID  ""
+#define WIFI_PASS  ""
 
-#define BLE_ESPERA_MS         60000UL   // 60 s sin conexión → red guardada
+// Ventana BLE de cada encendido: 60 s para que la app configure la estación o
+// le CAMBIE la red. Si nadie se conecta, la estación se reinicia sola y arranca
+// con la última red guardada. Súbelo si te queda corto para abrir la app.
+#define BLE_ESPERA_MS         60000UL
 #define BLE_GRACIA_DESC_MS    30000UL
+
+// Botón BOOT del devkit. Manténlo pulsado mientras arranca la estación para
+// OLVIDAR la red guardada (útil si esa red ya no existe). Para el uso normal no
+// hace falta: basta con encenderla y usar la ventana BLE.
+#define PIN_BOTON_PROV        0
 
 // ════════════════════════════════════════════════════════════
 //  FIN DE CONFIGURACIÓN
@@ -163,11 +196,29 @@ void guardarConfig(const String& ssid, const String& pass, const String& uuid,
   Serial.println("[Prefs] Config completa guardada (uuid " + uuid + ", red " + ssid + ")");
 }
 
+// Borra la config persistida: el próximo arranque vuelve a modo provisioning.
+// No toca cfgUuid/cfgToken en RAM, para que el nombre BLE anunciado siga siendo
+// el mismo ("Meteo-xxxx") y la app reconozca la estación.
+void borrarConfig() {
+  prefs.begin("wifi", false);
+  prefs.clear();
+  prefs.end();
+  Serial.println("[Prefs] Config borrada → modo provisioning.");
+}
+
 // Carga la config persistida sobre los valores por defecto (#define). Se llama al arranque.
 void cargarConfig() {
   String u = leerUuid();  if (!u.isEmpty()) cfgUuid  = u;
   String t = leerToken(); if (!t.isEmpty()) cfgToken = t;
   String r = leerUrl();   if (!r.isEmpty()) cfgUrl   = r;
+}
+
+// Sanity check del UUID (formato 8-4-4-4-12). No valida hex a fondo: basta para
+// no provisionar/persistir una identidad vacía o basura que el backend rechazaría
+// con 401. Evita reiniciar a un bucle de auth fallida (defensa del punto 2).
+bool uuidValido(const String& u) {
+  if (u.length() != 36) return false;
+  return u.charAt(8) == '-' && u.charAt(13) == '-' && u.charAt(18) == '-' && u.charAt(23) == '-';
 }
 
 // ════════════════════════════════════════════
@@ -196,36 +247,115 @@ String dirViento(float angulo) {
 //  BACKEND REST (reemplaza a Firebase)
 // ════════════════════════════════════════════
 
+// Host de una URL: "https://host:puerto/lo-que-sea" -> "host".
+String hostDeUrl(const String& url) {
+  String h = url;
+  int p = h.indexOf("://");
+  if (p >= 0) h = h.substring(p + 3);
+  int barra = h.indexOf('/');
+  if (barra >= 0) h = h.substring(0, barra);
+  int dosp = h.indexOf(':');
+  if (dosp >= 0) h = h.substring(0, dosp);
+  return h;
+}
+
+// Puerto de una URL: el explícito si lo trae; si no, 443 en https y 80 en http.
+uint16_t puertoDeUrl(const String& url) {
+  int p = url.indexOf("://");
+  String resto = (p >= 0) ? url.substring(p + 3) : url;
+  int barra = resto.indexOf('/');
+  if (barra >= 0) resto = resto.substring(0, barra);
+  int dosp = resto.indexOf(':');
+  if (dosp >= 0) return (uint16_t) resto.substring(dosp + 1).toInt();
+  return url.startsWith("https") ? 443 : 80;
+}
+
+// Pre-vuelo de red: resuelve el DNS del backend y abre un TCP de prueba antes
+// del primer handshake TLS. Portado de la versión TEST — sin esto el primer
+// POST /api/device/auth salía con fallo de transporte (code < 0).
+void diagnosticarRed() {
+  String host    = hostDeUrl(cfgUrl);
+  uint16_t puerto = puertoDeUrl(cfgUrl);
+
+  Serial.println("[DEBUG] Test DNS...");
+  IPAddress ipBackend;
+  if (WiFi.hostByName(host.c_str(), ipBackend)) {
+    Serial.printf("[DEBUG] DNS OK → %s = %s\n", host.c_str(), ipBackend.toString().c_str());
+  } else {
+    Serial.printf("[DEBUG] DNS FAIL — no resuelve %s\n", host.c_str());
+  }
+
+  Serial.printf("[DEBUG] Test TCP (%u)...\n", puerto);
+  WiFiClient tcpTest;
+  if (tcpTest.connect(host.c_str(), puerto)) {
+    Serial.printf("[DEBUG] TCP OK → %s:%u\n", tcpTest.remoteIP().toString().c_str(), puerto);
+    tcpTest.stop();
+  } else {
+    Serial.printf("[DEBUG] TCP FAIL — no llega a %s:%u\n", host.c_str(), puerto);
+  }
+
+  Serial.println("[DEBUG] Test DNS NTP...");
+  IPAddress ipNtp;
+  if (WiFi.hostByName("pool.ntp.org", ipNtp)) {
+    Serial.printf("[DEBUG] NTP DNS OK → %s\n", ipNtp.toString().c_str());
+  } else {
+    Serial.println("[DEBUG] NTP DNS FAIL");
+  }
+}
+
 // 1) Handshake: token permanente -> JWT de dispositivo (vida corta).
 bool obtenerDeviceToken() {
   if (WiFi.status() != WL_CONNECTED) { authStatus = "AUTH_FAIL:NET"; return false; }
-  WiFiClientSecure cli; cli.setInsecure();   // simplificado para el proyecto
-  HTTPClient http;
-  if (!http.begin(cli, cfgUrl + "/api/device/auth")) { authStatus = "AUTH_FAIL:NET"; return false; }
-  http.addHeader("Content-Type", "application/json");
-  String body = String("{\"uuid\":\"") + cfgUuid + "\",\"token\":\"" + cfgToken +
-                "\",\"firmware\":\"" EST_FIRMWARE "\"}";
-  int code = http.POST(body);
-  bool ok = false;
-  if (code == 200) {
-    StaticJsonDocument<512> doc;
-    if (deserializeJson(doc, http.getString()) == DeserializationError::Ok) {
-      deviceToken = String((const char*) doc["deviceToken"]);
-      long exp = doc["expiresIn"] | 3600;
-      deviceTokenExp = millis() + (unsigned long)((exp - 60) * 1000L);  // renueva 1 min antes
-      ok = !deviceToken.isEmpty();
-      Serial.println("[AUTH] device token OK");
+  // Reintenta con backoff largo para cubrir cold start de Render (hasta ~50s)
+  int backoff[] = { 5000, 15000, 30000 };
+  for (int intento = 0; intento < 3; intento++) {
+    if (intento > 0) {
+      Serial.printf("[AUTH] reintento %d/3 tras %d ms…\n", intento + 1, backoff[intento - 1]);
+      publicarEstado(String("AUTH_RETRY:") + (intento + 1));
+      delay(backoff[intento - 1]);
     }
-  } else {
-    Serial.printf("[AUTH] fallo %d: %s\n", code, http.getString().c_str());
+    // El handshake TLS pide ~40-50 KB de heap CONTIGUO. Si "mayor bloque" cae
+    // por debajo de eso, connect() falla con -1 (connection refused) aunque la
+    // red esté perfecta. Con el BLE encendido es justo lo que suele pasar.
+    Serial.printf("[HEAP] antes del handshake: %u libres, mayor bloque %u, BLE %s\n",
+                  ESP.getFreeHeap(), ESP.getMaxAllocHeap(), bleActivo ? "ON" : "OFF");
+
+    WiFiClientSecure cli; cli.setInsecure();
+    HTTPClient http;
+    if (!http.begin(cli, cfgUrl + "/api/device/auth")) {
+      if (intento == 2) { authStatus = "AUTH_FAIL:NET"; return false; }
+      continue;
+    }
+    http.setTimeout(45000);
+    http.addHeader("Content-Type", "application/json");
+    String body = String("{\"uuid\":\"") + cfgUuid + "\",\"token\":\"" + cfgToken +
+                  "\",\"firmware\":\"" EST_FIRMWARE "\"}";
+    int code = http.POST(body);
+    bool ok = false;
+    if (code == 200) {
+      StaticJsonDocument<512> doc;
+      if (deserializeJson(doc, http.getString()) == DeserializationError::Ok) {
+        deviceToken = String((const char*) doc["deviceToken"]);
+        long exp = doc["expiresIn"] | 3600;
+        deviceTokenExp = millis() + (unsigned long)((exp - 60) * 1000L);
+        ok = !deviceToken.isEmpty();
+        Serial.println("[AUTH] device token OK");
+      }
+    } else {
+      Serial.printf("[AUTH] fallo %d: %s\n", code, http.getString().c_str());
+      Serial.printf("[AUTH] errorStr: %s\n", http.errorToString(code).c_str());
+      if (code < 0) {
+        Serial.printf("[AUTH] cfgUrl: %s\n", cfgUrl.c_str());
+        Serial.printf("[AUTH] cfgUuid: %s\n", cfgUuid.c_str());
+        Serial.printf("[AUTH] cfgToken len: %d\n", cfgToken.length());
+      }
+    }
+    http.end();
+    if (ok) { authStatus = "AUTH_OK"; return true; }
+    if (code == 401 || code == 403) { authStatus = "AUTH_FAIL:401"; return false; }
   }
-  // authStatus para el provisioning por BLE (contrato: 401 / NET / TIMEOUT).
-  if (ok)                         authStatus = "AUTH_OK";
-  else if (code == 401 || code == 403) authStatus = "AUTH_FAIL:401";
-  else if (code <= 0)             authStatus = "AUTH_FAIL:NET";
-  else                            authStatus = "AUTH_FAIL:401";
-  http.end();
-  return ok;
+  authStatus = "AUTH_FAIL:NET";
+  return false;
 }
 
 // Garantiza un device token vigente (re-auth si falta o expiró).
@@ -361,7 +491,14 @@ class CallbackConexion : public BLEServerCallbacks {
 };
 
 void iniciarBLE() {
-  String bleNombre = String("Meteo-") + cfgUuid;
+  // El nombre BLE debe caber en el paquete de anuncio (máx 31 bytes, y el
+  // service UUID de 128 bits ya ocupa 18). El uuid completo (42 chars) lo
+  // desborda y hace crashear a Bluedroid (StoreProhibited). Usamos sólo el
+  // último bloque hex del uuid como sufijo: p.ej. "Meteo-045cda08568c".
+  String sufijo = cfgUuid;
+  int g = sufijo.lastIndexOf('-');
+  if (g >= 0) sufijo = sufijo.substring(g + 1);   // último grupo hex del uuid
+  String bleNombre = String("Meteo-") + sufijo;
   BLEDevice::init(bleNombre.c_str());
   BLEDevice::setMTU(512);   // para recibir el paquete CONFIG en un solo write (002.1)
   BLEDevice::setPower(ESP_PWR_LVL_P7);
@@ -391,18 +528,10 @@ void iniciarBLE() {
   Serial.println("[BLE] Anunciando como: " + bleNombre);
 }
 
-void apagarBLE() {
-  if (!bleActivo) return;
-  Serial.println("[BLE] Apagando para liberar memoria…");
-  BLEDevice::stopAdvertising();
-  BLEDevice::deinit(true);
-  bleStatusChar = nullptr;
-  bleServer = nullptr;
-  bleActivo = false;
-  delay(200);
-  Serial.printf("[HEAP] Tras apagar BLE: %u bytes (mayor: %u)\n",
-                ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-}
+// NO existe un apagarBLE(). BLEDevice::deinit(true) con el celular todavía
+// conectado cuelga a Bluedroid: la estación se congelaba justo ahí y nunca
+// llegaba a los sensores. La única forma fiable de recuperar el heap del BLE
+// es reiniciar (ESP.restart), y es lo que hace el arranque de provisioning.
 
 // ════════════════════════════════════════════
 //  WIFI — conexión bloqueante con timeout
@@ -507,8 +636,13 @@ void mostrarOLED(float temp, float hum, float pres, float viento, String dir, fl
 // ════════════════════════════════════════════
 //  ESPERAR CONFIGURACIÓN BLE  (idéntico a v1)
 // ════════════════════════════════════════════
-bool esperarConfiguracionBLE() {
-  Serial.printf("[BLE] Esperando configuración (timeout %lus sin conexión)…\n", BLE_ESPERA_MS / 1000);
+// esperaMs: cuánto aguantamos SIN que nadie se conecte. Es corto en la ventana
+// de reconfiguración (la estación ya tiene red y queremos que empiece a operar)
+// y largo en el provisioning inicial (no tiene nada que hacer hasta que la
+// configuren). Una vez conectado el celular, se espera sin límite; sólo corre
+// el plazo de gracia si se desconecta.
+bool esperarConfiguracionBLE(unsigned long esperaMs) {
+  Serial.printf("[BLE] Esperando configuración (%lus sin conexión y me voy)…\n", esperaMs / 1000);
   unsigned long inicio = millis();
   unsigned long ultimaDesconexion = 0;
   bool huboCliente = false;
@@ -522,78 +656,16 @@ bool esperarConfiguracionBLE() {
       }
       if (millis() - ultimaDesconexion > BLE_GRACIA_DESC_MS) { Serial.println("[BLE] Gracia agotada."); return false; }
     } else {
-      if (millis() - inicio > BLE_ESPERA_MS) { Serial.println("[BLE] 60s sin conexión."); return false; }
+      if (millis() - inicio > esperaMs) { Serial.printf("[BLE] %lus sin conexión.\n", esperaMs / 1000); return false; }
     }
     delay(100);
   }
 }
 
 // ════════════════════════════════════════════
-//  SETUP
+//  SENSORES (arranca el hardware real; común a los dos modos de arranque)
 // ════════════════════════════════════════════
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-  cargarConfig();   // uuid/token/url desde NVS (fallback a los #define)
-  Serial.println("\n[INIT] Red Meteorológica — backend REST (sin Firebase)");
-  Serial.println("[INIT] UUID:     " + cfgUuid);
-  Serial.println("[INIT] Firmware: " EST_FIRMWARE);
-
-  Serial.println("[DEBUG] 1 — Wire.begin...");
-  Wire.begin(27, 22);
-  Serial.println("[DEBUG] 2 — Wire1.begin...");
-  Wire1.begin(32, 33);
-
-  // 1) BLE + espera de configuración WiFi
-  Serial.println("[DEBUG] 3 — iniciarBLE...");
-  iniciarBLE();   // ← FIX 002.1: antes NUNCA se llamaba (BLE quedaba inerte)
-  Serial.println("[DEBUG] 4 — esperarConfiguracionBLE...");
-  bool credsPorBLE = esperarConfiguracionBLE();
-
-  // 2) Elegir credenciales WiFi
-  Serial.println("[DEBUG] 5 — elegir credenciales...");
-  String ssid, pass;
-  if (credsPorBLE) { ssid = nuevaSSID; pass = nuevaPass; }
-  else if (strlen(WIFI_SSID) > 0) { ssid = WIFI_SSID; pass = WIFI_PASS; }
-  else { ssid = leerSSID(); pass = leerPass(); }
-
-  // Si el paquete BLE trajo identidad completa (002.1), adóptala para el handshake.
-  if (configCompletaPorBLE) {
-    cfgUuid = nuevoUuid;
-    cfgToken = nuevoToken;
-    if (!nuevaUrl.isEmpty()) cfgUrl = nuevaUrl;
-  }
-
-  // 3) Conectar a WiFi
-  Serial.println("[DEBUG] 6 — conectarWifi...");
-  bool wifiOK = false;
-  if (!ssid.isEmpty()) wifiOK = conectarWifi(ssid, pass);
-  else { Serial.println("[WiFi] No hay credenciales. Configura por BLE."); publicarEstado("NO_CREDS"); }
-
-  // 4) Si WiFi OK: guardar, apagar BLE, NTP, handshake con el backend
-  Serial.println("[DEBUG] 7 — post-WiFi...");
-  if (wifiOK) {
-    // Persistir la config recibida (WiFi + identidad si vino por CONFIG).
-    if (credsPorBLE) guardarConfig(ssid, pass, cfgUuid, cfgToken, cfgUrl);
-    Serial.println("[DEBUG] 9 — configTime...");
-    configTime(-6*3600, 0, "pool.ntp.org");
-    Serial.println("[DEBUG] 10 — esperarNTP...");
-    esperarNTP(10000);
-    // Handshake ANTES de apagar BLE, para poder reportar AUTH_OK/AUTH_FAIL a la app.
-    Serial.println("[DEBUG] 11 — obtenerDeviceToken...");
-    obtenerDeviceToken();   // primer handshake (si falla, se reintenta al enviar)
-    publicarEstado(authStatus.isEmpty() ? "AUTH_FAIL:NET" : authStatus);  // 002.1: éxito real
-    delay(1200);            // deja que salga la notificación BLE antes de apagar
-    Serial.println("[DEBUG] 8 — apagarBLE...");
-    apagarBLE();
-  } else {
-    Serial.println("[Setup] WiFi falló. BLE sigue activo.");
-    publicarEstado("WIFI_FAIL");
-    credencialesRecibidas = false; nuevaSSID = ""; nuevaPass = "";
-    configCompletaPorBLE = false; nuevoUuid = ""; nuevoToken = ""; nuevaUrl = "";
-  }
-
-  // 5) Sensores (SIN CAMBIOS)
+void inicializarSensores() {
   Serial.println("[DEBUG] 12 — initOLED...");
   initOLED();
   Serial.println("[DEBUG] 13 — sensores I2C...");
@@ -614,15 +686,187 @@ void setup() {
 }
 
 // ════════════════════════════════════════════
+//  APLICAR LA CONFIG QUE LLEGÓ POR BLE
+//
+//  Prueba la red ANTES de guardarla (para no dejar la estación con una
+//  contraseña mala) y, si funciona, la persiste y REINICIA: ese reinicio es el
+//  que arranca en modo operativo, ya sin BLE y con heap para el TLS.
+//  Si la red no sirve, avisa a la app, olvida lo recibido y devuelve el control
+//  para seguir escuchando — así se puede reintentar sin apagar nada.
+//
+//  Si vuelve, es que NO funcionó (cuando funciona, reinicia y no regresa).
+// ════════════════════════════════════════════
+void aplicarConfigBLE() {
+  String nSsid = nuevaSSID, nPass = nuevaPass;
+
+  // Si el paquete BLE trajo identidad completa (002.1), adóptala.
+  if (configCompletaPorBLE) {
+    cfgUuid = nuevoUuid;
+    cfgToken = nuevoToken;
+    if (!nuevaUrl.isEmpty()) cfgUrl = nuevaUrl;
+  }
+
+  // DEFENSA (punto 2): no provisionar sin una identidad válida. Si llega un APPLY
+  // legado (solo WiFi) y la estación no tiene uuid/token válidos —ni recién
+  // recibidos por CONFIG ni guardados en NVS—, reiniciar sólo la metería en un
+  // bucle de auth 401 sin BLE para corregirlo. Avisamos y seguimos escuchando
+  // para que manden el paquete completo (uuid+token).
+  if (!uuidValido(cfgUuid) || cfgToken.isEmpty()) {
+    Serial.println("[BLE] Sin identidad válida para provisionar (uuid='" + cfgUuid +
+                   "', token " + (cfgToken.isEmpty() ? "AUSENTE" : "presente") +
+                   "). Falta el paquete completo uuid+token. NO persisto ni reinicio.");
+    publicarEstado("BAD_CONFIG");
+    WiFi.disconnect(true, true);
+    credencialesRecibidas = false; nuevaSSID = ""; nuevaPass = "";
+    configCompletaPorBLE = false; nuevoUuid = ""; nuevoToken = ""; nuevaUrl = "";
+    return;
+  }
+
+  Serial.println("[DEBUG] 6 — conectarWifi...");
+  if (conectarWifi(nSsid, nPass)) {   // publica WIFI_OK:<ip> o el motivo del fallo
+    // Log explícito de QUÉ identidad se persiste: en el serial se ve al instante
+    // si es la nueva (llegó por CONFIG) o la que ya tenía guardada.
+    Serial.println(String("[Prefs] Persisto identidad uuid=") + cfgUuid +
+                   (configCompletaPorBLE ? " (NUEVA, recibida por CONFIG)"
+                                         : " (conservada de NVS/#define)"));
+    guardarConfig(nSsid, nPass, cfgUuid, cfgToken, cfgUrl);
+    publicarEstado("REBOOTING");      // la app lo da por bueno y confirma en el backend
+    delay(1500);                      // deja salir la notificación BLE
+    Serial.println("[BLE] Red guardada. Reinicio para autenticar ya sin BLE…");
+    ESP.restart();
+  }
+
+  Serial.println("[BLE] Esa red no funcionó. Sigo escuchando.");
+  WiFi.disconnect(true, true);
+  credencialesRecibidas = false; nuevaSSID = ""; nuevaPass = "";
+  configCompletaPorBLE = false; nuevoUuid = ""; nuevoToken = ""; nuevaUrl = "";
+}
+
+// ════════════════════════════════════════════
+//  SETUP — el BLE y el TLS NUNCA coexisten
+//
+//  El stack BLE (Bluedroid) deja el heap contiguo en ~18 KB, y el handshake TLS
+//  necesita ~45 KB: con el BLE encendido, autenticar contra el backend es
+//  imposible (connect() devuelve -1). Y apagarlo en caliente tampoco vale:
+//  BLEDevice::deinit() con el celular conectado cuelga la estación. La única
+//  forma fiable de recuperar ese heap es REINICIAR.
+//
+//  De ahí los dos arranques:
+//
+//   A) VENTANA DE CONFIGURACIÓN — al encender la estación o pulsar RST.
+//      El BLE se abre BLE_ESPERA_MS (60 s) para que la app la configure O LE
+//      CAMBIE LA RED, aunque ya tenga una guardada. Al recibir una red que
+//      funciona: la guarda y reinicia. Si nadie se conecta en esos 60 s, se
+//      reinicia sola y se conecta con la última red guardada.
+//
+//   B) ARRANQUE OPERATIVO — el reinicio que provoca la propia estación.
+//      Se reconoce por el motivo del reset (ESP_RST_SW). El BLE ni se enciende:
+//      todo el heap va a WiFi + TLS, el handshake funciona y publica lecturas.
+//
+//  Es decir: para cambiar la red, apaga y enciende la estación (o pulsa RST) y
+//  tienes 60 s para hacerlo desde la app. El botón BOOT sólo hace falta para
+//  OLVIDAR la red guardada (p. ej. si esa red ya no existe).
+// ════════════════════════════════════════════
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  cargarConfig();   // uuid/token/url desde NVS (fallback a los #define)
+  Serial.println("\n[INIT] Red Meteorológica — backend REST (sin Firebase)");
+  Serial.println("[INIT] UUID:     " + cfgUuid + (uuidValido(cfgUuid) ? "" : "  (¡formato inválido!)"));
+  Serial.println(String("[INIT] Token:    ") + (cfgToken.isEmpty() ? "AUSENTE" : "presente"));
+  Serial.println("[INIT] Firmware: " EST_FIRMWARE);
+
+  Serial.println("[DEBUG] 1 — Wire.begin...");
+  Wire.begin(27, 22);
+  Serial.println("[DEBUG] 2 — Wire1.begin...");
+  Wire1.begin(32, 33);
+
+  // ¿Este arranque lo provocamos nosotros (ESP.restart) o lo provocó el usuario
+  // encendiendo/reseteando la estación? Sólo el nuestro va directo a operar; el
+  // del usuario abre la ventana BLE, que es su forma de decir "quiero tocarla".
+  esp_reset_reason_t motivoReset = esp_reset_reason();
+  bool arranqueOperativo = (motivoReset == ESP_RST_SW);
+
+  // BOOT pulsado → olvida la red guardada (para cuando esa red ya no exista).
+  pinMode(PIN_BOTON_PROV, INPUT_PULLUP);
+  delay(50);
+  if (digitalRead(PIN_BOTON_PROV) == LOW) {
+    Serial.println("[INIT] Botón BOOT pulsado → olvido la red guardada.");
+    borrarConfig();
+    arranqueOperativo = false;
+  }
+
+  String ssid = leerSSID();
+  String pass = leerPass();
+  if (ssid.isEmpty() && strlen(WIFI_SSID) > 0) { ssid = WIFI_SSID; pass = WIFI_PASS; }
+
+  // Sin red guardada no hay nada que operar: siempre a la ventana BLE.
+  if (!arranqueOperativo || ssid.isEmpty()) {
+    // ── A) VENTANA DE CONFIGURACIÓN ────────────────────────────────────
+    const unsigned long ventana = BLE_ESPERA_MS;
+    Serial.printf("[INIT] Ventana de configuración por BLE (%lus). Red guardada: %s\n",
+                  ventana / 1000, ssid.isEmpty() ? "ninguna" : ssid.c_str());
+    Serial.println("[DEBUG] 3 — iniciarBLE...");
+    iniciarBLE();
+
+    // Se sale de este bucle cuando la app manda una red que FUNCIONA (dentro de
+    // aplicarConfigBLE se reinicia y no se vuelve) o cuando se agota la ventana
+    // sin que nadie se conecte. Si la red no sirve, se avisa y se sigue
+    // escuchando: se puede reintentar con otra contraseña sin apagar nada.
+    Serial.println("[DEBUG] 4 — esperarConfiguracionBLE...");
+    while (esperarConfiguracionBLE(ventana)) {
+      aplicarConfigBLE();
+    }
+
+    // Se agotó la ventana sin que nadie configurara nada.
+    if (!ssid.isEmpty()) {
+      Serial.println("[INIT] Nadie tocó la estación. Reinicio para operar con la red guardada.");
+      delay(300);
+      ESP.restart();
+    }
+
+    // No hay red guardada: quedarse en BLE indefinidamente. El loop reinicia la
+    // estación en cuanto lleguen credenciales nuevas.
+    Serial.println("[Setup] Sin red guardada y nadie la configuró. BLE sigue activo.");
+    publicarEstado("NO_CREDS");
+    inicializarSensores();
+    return;
+  }
+
+  // ── B) ARRANQUE OPERATIVO (sin BLE) ──────────────────────────────────
+  Serial.println("[INIT] Arranque operativo. El BLE NO se enciende.");
+  Serial.printf("[HEAP] al arrancar sin BLE: %u libres, mayor bloque %u\n",
+                ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+
+  Serial.println("[DEBUG] 6 — conectarWifi...");
+  if (conectarWifi(ssid, pass)) {
+    Serial.println("[DEBUG] 8b — diagnosticarRed...");
+    diagnosticarRed();
+    Serial.println("[DEBUG] 9 — configTime...");
+    configTime(-6*3600, 0, "pool.ntp.org");
+    Serial.println("[DEBUG] 10 — esperarNTP...");
+    esperarNTP(10000);
+    Serial.println("[DEBUG] 11 — obtenerDeviceToken...");
+    obtenerDeviceToken();   // ahora con el heap entero (si falla, se reintenta al enviar)
+  } else {
+    Serial.println("[Setup] WiFi falló. Apaga y enciende la estación para cambiarle la red.");
+  }
+
+  inicializarSensores();
+}
+
+// ════════════════════════════════════════════
 //  LOOP
 // ════════════════════════════════════════════
 void loop() {
   unsigned long ahora = millis();
 
-  // Si BLE sigue activo (WiFi falló) y llegan nuevas creds → reiniciar.
+  // La estación se quedó sin red y con el BLE abierto. Si la app le manda una
+  // config ahora, hay que probarla y GUARDARLA antes de reiniciar: si sólo
+  // reiniciáramos, lo recibido se perdería y habría que mandarlo otra vez.
   if (bleActivo && credencialesRecibidas) {
-    Serial.println("[BLE] Nuevas credenciales. Reiniciando…");
-    publicarEstado("REBOOTING"); delay(800); ESP.restart();
+    Serial.println("[BLE] Nuevas credenciales.");
+    aplicarConfigBLE();   // si la red funciona, guarda y reinicia (no vuelve)
   }
 
   // Velocidad viento cada 5 s (SIN CAMBIOS)
