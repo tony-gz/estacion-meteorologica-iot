@@ -138,7 +138,20 @@ export function provisionCompleto(opts: OpcionesProvisionCompleto): Promise<Esta
         mtu = 23;
       }
       await dispositivo.discoverAllServicesAndCharacteristics();
-      const cabeEnMtu = mtu - 3 >= bytesUtf8(paquete);
+
+      // ¿El firmware expone la característica CONFIG? Es lo que separa un firmware
+      // 002.1 (provisioning completo: uuid+token+wifi+url) de uno antiguo que sólo
+      // sabe de WiFi. Lo resolvemos MIRANDO las características descubiertas, no
+      // atrapando el error del write: así un fallo transitorio al escribir CONFIG
+      // no se confunde con "no existe" y no degradamos a un legado que dejaría la
+      // estación con su identidad anterior (justo el bug de "no guarda el uuid").
+      let tieneConfig = false;
+      try {
+        const chars = await dispositivo.characteristicsForService(SERVICIO_UUID);
+        tieneConfig = chars.some((c) => c.uuid.toLowerCase() === CONFIG_UUID.toLowerCase());
+      } catch {
+        tieneConfig = false;
+      }
 
       timer = setTimeout(() => {
         finalizar(() =>
@@ -168,15 +181,46 @@ export function provisionCompleto(opts: OpcionesProvisionCompleto): Promise<Esta
         await dispositivo.writeCharacteristicWithResponseForService(SERVICIO_UUID, CMD_UUID, strABase64(CMD_APLICAR));
       };
 
-      if (!cabeEnMtu) {
+      // Firmware antiguo (sin CONFIG): sólo sabe de WiFi. El legado es la única
+      // vía posible y ahí WIFI_OK es el éxito real (no habrá AUTH_OK).
+      if (!tieneConfig) {
         await enviarLegado();
+        return;
+      }
+
+      // Firmware 002.1: la identidad va SÍ o SÍ por CONFIG. No degradamos a
+      // legado por nada, porque ese flujo no manda uuid ni token y la estación
+      // se quedaría con la identidad anterior mientras la app canta éxito.
+
+      // Si el paquete no cabe en el MTU negociado, fallamos claro en vez de
+      // mandar un WiFi sin identidad.
+      const cabeEnMtu = mtu - 3 >= bytesUtf8(paquete);
+      if (!cabeEnMtu) {
+        finalizar(() =>
+          resolve({
+            crudo: 'MTU_INSUFICIENTE', fase: 'ERROR',
+            mensaje: 'Tu teléfono no negoció un Bluetooth con espacio suficiente para enviar '
+              + 'la identidad de la estación. Acércate a la estación y reintenta; si sigue igual, '
+              + 'reinicia el Bluetooth del teléfono.',
+            terminal: true, exito: false,
+          }),
+        );
         return;
       }
       try {
         await dispositivo.writeCharacteristicWithResponseForService(SERVICIO_UUID, CONFIG_UUID, strABase64(paquete));
       } catch {
-        // El firmware no expone CONFIG (versión antigua): degradar a solo-WiFi.
-        await enviarLegado();
+        // El firmware SÍ expone CONFIG pero la escritura falló (GATT, desconexión,
+        // MTU real por debajo del negociado…). NO caemos a legado: sería mandar el
+        // WiFi sin uuid/token y dejar la identidad vieja. Fallamos y lo decimos.
+        finalizar(() =>
+          resolve({
+            crudo: 'CONFIG_WRITE_FAIL', fase: 'ERROR',
+            mensaje: 'No se pudo enviar la identidad de la estación por Bluetooth. Acércate a la '
+              + 'estación y reintenta; si sigue igual, reinicia el Bluetooth del teléfono.',
+            terminal: true, exito: false,
+          }),
+        );
       }
     })().catch((e) => finalizar(() => reject(e as Error)));
   });

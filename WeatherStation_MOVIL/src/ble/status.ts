@@ -83,7 +83,13 @@ export function parseStatus(crudo: string, opts: OpcionesParse = {}): EstadoBLE 
     case 'NO_CREDS':
       return base('IDLE', 'La estación no tiene credenciales guardadas.');
     case 'REBOOTING':
-      return base('IDLE', 'La estación se está reiniciando…');
+      // En el provisioning completo, REBOOTING es el final feliz: el firmware ya
+      // guardó la config y se reinicia para autenticarse SIN el BLE encendido
+      // (con BLE no queda heap para el handshake TLS). La autenticación ocurre
+      // tras el reinicio, así que se confirma consultando el backend, no por BLE.
+      return esperaAuth
+        ? base('CONECTADO', 'Estación configurada. Se está reiniciando para conectarse al servidor.', true, true)
+        : base('IDLE', 'La estación se está reiniciando…');
     default:
       return base('IDLE', texto || 'Esperando estado…');
   }

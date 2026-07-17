@@ -51,6 +51,14 @@ describe('parseStatus — provisioning completo (002.1)', () => {
     expect(parseStatus('AUTH_OK')).toMatchObject({ fase: 'CONECTADO', terminal: true, exito: true });
   });
 
+  // El firmware guarda la config y se reinicia para autenticar sin el BLE
+  // encendido (con BLE no hay heap para el TLS), así que el AUTH_OK ya no llega
+  // por BLE: REBOOTING es el cierre del provisioning.
+  it('REBOOTING también cierra el flujo con éxito (la estación se reinicia para autenticar)', () => {
+    expect(parseStatus('REBOOTING', { esperaAuth: true }))
+      .toMatchObject({ fase: 'CONECTADO', terminal: true, exito: true });
+  });
+
   it('AUTH_FAIL:{code} mapea cada código a un mensaje distinto y es terminal', () => {
     const c401 = parseStatus('AUTH_FAIL:401');
     const cNet = parseStatus('AUTH_FAIL:NET');
